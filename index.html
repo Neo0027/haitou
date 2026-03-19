@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="配当トラッカー">
+<meta name="theme-color" content="#0a0c12">
+<title>配当トラッカー</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi6YWN5b2T44OI44Op44OD44Kr44O8Iiwic2hvcnRfbmFtZSI6IumFjeW9kyIsInN0YXJ0X3VybCI6Ii4vIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzBhMGMxMiIsInRoZW1lX2NvbG9yIjoiIzBhMGMxMiIsImljb25zIjpbXX0=">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230a0c12' width='100' height='100' rx='20'/><text x='50' y='62' text-anchor='middle' font-size='50' fill='%23c9a84c'>◆</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0c12;font-family:'Noto Sans JP',sans-serif;color:#e0ddd5;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:#0a0c12}::-webkit-scrollbar-thumb{background:#2a2d3a;border-radius:3px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+button{cursor:pointer;font-family:inherit} button:hover{filter:brightness(1.12)}
+input:focus,select:focus{border-color:#c9a84c!important;outline:none}
+tr:hover td{background:rgba(201,168,76,.03)!important}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const e=React.createElement,{useState,useEffect,useCallback}=React;
+const SK="div-pwa-v1";
+const ACCOUNTS={shi:"カブコム",ki:"恭輔楽天",chi:"千早口座",ra:"知穂楽天"};
+const AC={shi:"#e87561",ki:"#6ea8e7",chi:"#6ee7a8",ra:"#d4a6e7"};
+const AS={shi:"シ",ki:"キ",chi:"チ",ra:"ラ"};
+const AK=Object.keys(ACCOUNTS);
+const INIT=[
+{t:"1605",n:"INPEX",a:{ki:200},d:100},{t:"167A",n:"リョーサン菱洋HD",a:{ki:100,ra:100},d:140},
+{t:"2305",n:"スタジオアリス",a:{ki:100,ra:100},d:50},{t:"2503",n:"キリンHD",a:{chi:100},d:76},
+{t:"2730",n:"エディオン",a:{shi:100,ki:100,chi:100},d:50},{t:"2914",n:"JT",a:{shi:400,ki:200,chi:100},d:234},
+{t:"3003",n:"ヒューリック",a:{shi:300,ki:300,chi:300},d:57},{t:"3245",n:"ディアライフ",a:{shi:100},d:30},
+{t:"3401",n:"帝人",a:{shi:200,chi:100},d:20},{t:"3036",n:"アルコニックス",a:{shi:300,ki:300},d:50},
+{t:"3387",n:"クリレス",a:{ki:200},d:24},{t:"3548",n:"バロック",a:{ki:1000,ra:500},d:66},
+{t:"3612",n:"ワールド",a:{ra:100},d:96},{t:"3825",n:"リミックスポイント",a:{shi:200},d:0},
+{t:"4188",n:"三菱ケミカル",a:{shi:100},d:36},{t:"4502",n:"武田薬品工業",a:{ki:100,chi:100},d:196},
+{t:"4927",n:"ポーラ",a:{ki:100,ra:100},d:30},{t:"5019",n:"出光興産",a:{shi:100},d:34},
+{t:"5216",n:"リソル",a:{ki:300},d:120},{t:"5301",n:"東海カーボン",a:{ki:100,ra:100},d:48},
+{t:"5411",n:"JFE",a:{shi:200},d:100},{t:"5857",n:"アサヒHD",a:{shi:200},d:95},
+{t:"5938",n:"LIXIL",a:{shi:100},d:90},{t:"6339",n:"新東工業",a:{shi:100,chi:100},d:70},
+{t:"7177",n:"GMO-FH",a:{shi:300},d:81},{t:"7182",n:"ゆうちょ銀行",a:{ki:100},d:60},
+{t:"7192",n:"日本モーゲージ",a:{shi:300},d:36},{t:"7201",n:"日産自動車",a:{shi:100},d:0},
+{t:"7272",n:"ヤマハ発動機",a:{ki:100,shi:100},d:50},{t:"7278",n:"エクセディ",a:{ki:100},d:130},
+{t:"7337",n:"ひろぎんHLDGS",a:{chi:100},d:42},{t:"7453",n:"良品計画",a:{shi:100},d:52},
+{t:"7581",n:"サイゼリヤ",a:{shi:100},d:18},{t:"7599",n:"IDOM",a:{shi:100,ki:100},d:32},
+{t:"7613",n:"シークス",a:{ki:100,ra:100},d:56},{t:"7616",n:"コロワイド",a:{ki:500},d:5},
+{t:"7974",n:"任天堂",a:{shi:100},d:328},{t:"8005",n:"スクロール",a:{ki:100},d:20},
+{t:"8016",n:"オンワード",a:{ra:1000},d:32},{t:"8053",n:"住友商事",a:{shi:100},d:140},
+{t:"8058",n:"三菱商事",a:{shi:200},d:110},{t:"8098",n:"稲畑産業",a:{shi:100,chi:100},d:135},
+{t:"8103",n:"明和産業",a:{ra:100},d:145},{t:"8125",n:"ワキタ",a:{shi:100,ki:300,ra:200},d:40},
+{t:"8252",n:"丸井グループ",a:{ki:100,ra:100},d:62},{t:"8304",n:"あおぞら銀行",a:{chi:100},d:76},
+{t:"8316",n:"三井住友FG",a:{shi:100},d:157},{t:"8439",n:"東京センチュリー",a:{ra:400},d:170},
+{t:"8473",n:"SBI",a:{shi:100,ki:100,chi:100},d:200},{t:"8566",n:"リコーリース",a:{shi:100,chi:100},d:160},
+{t:"8584",n:"ジャックス",a:{shi:100},d:210},{t:"8591",n:"オリックス",a:{shi:100,ki:100,chi:100},d:154},
+{t:"8593",n:"三菱HCキャピタル",a:{chi:100},d:45},{t:"8698",n:"マネックス",a:{ki:100,chi:100},d:31},
+{t:"8802",n:"三菱地所",a:{shi:100},d:53},{t:"8877",n:"エスリード",a:{ki:100},d:70},
+{t:"8897",n:"タカラレーベン",a:{chi:100},d:28},{t:"9020",n:"JR東日本",a:{shi:100},d:55},
+{t:"9101",n:"日本郵船",a:{ki:100},d:225},{t:"9141",n:"JR九州",a:{shi:100},d:93},
+{t:"9275",n:"ナルミヤ",a:{ki:100},d:56},{t:"9432",n:"NTT",a:{shi:100,chi:100},d:5.2},
+{t:"9433",n:"KDDI",a:{shi:100,ki:100},d:80},{t:"9470",n:"学研",a:{shi:100},d:40},
+{t:"9513",n:"Jpower",a:{shi:100},d:90},{t:"9531",n:"東京ガス",a:{shi:100},d:80},
+{t:"9831",n:"ヤマダHD",a:{shi:100,ki:100,chi:100},d:13},{t:"9869",n:"加藤産業",a:{ki:100},d:72},
+{t:"9882",n:"イエローハット",a:{ra:100},d:76}
+];
+
+function fmt(v){return"¥"+Math.round(Number(v)).toLocaleString("ja-JP")}
+function ts(s){return Object.values(s.a).reduce((a,b)=>a+b,0)}
+function ad(s){return ts(s)*s.d}
+
+// localStorage helpers
+function load(){try{const d=JSON.parse(localStorage.getItem(SK));return d}catch(e){return null}}
+function persist(stocks,lu,apiKey){localStorage.setItem(SK,JSON.stringify({stocks,lastUpdated:lu,apiKey}))}
+
+// JSON extraction
+function extractJSON(text){
+  if(!text)return null;
+  const c=text.replace(/```json\s*/gi,"").replace(/```/g,"").trim();
+  try{const r=JSON.parse(c);if(Array.isArray(r))return r}catch(e){}
+  let depth=0,start=-1;const arrs=[];
+  for(let i=0;i<text.length;i++){
+    if(text[i]==="["){if(!depth)start=i;depth++}
+    else if(text[i]==="]"){depth--;if(!depth&&start>=0){arrs.push(text.slice(start,i+1));start=-1}}
+  }
+  for(const a of arrs.reverse()){try{const r=JSON.parse(a);if(Array.isArray(r)&&r.length&&r[0].t!=null)return r}catch(e){}}
+  const items=[];const re=/"t"\s*:\s*"([^"]+)"\s*,\s*"d"\s*:\s*([\d.]+)/g;
+  let m;while((m=re.exec(text))!==null)items.push({t:m[1],d:parseFloat(m[2])});
+  return items.length?items:null;
+}
+
+// ─── Styles ───
+const S={
+  wrap:{minHeight:"100vh",background:"#0a0c12",color:"#e0ddd5",paddingBottom:"env(safe-area-inset-bottom)"},
+  hdr:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",height:54,borderBottom:"1px solid #1a1d28",background:"#0d0f17",position:"sticky",top:0,zIndex:100,paddingTop:"env(safe-area-inset-top)"},
+  logo:{display:"flex",alignItems:"center",gap:6},
+  badge:{fontSize:9,color:"#6e6b63",background:"#1a1d28",padding:"2px 7px",borderRadius:10},
+  nav:{display:"flex",gap:1},
+  nb:{background:"none",border:"none",color:"#6e6b63",fontSize:11,fontWeight:500,padding:"6px 10px",borderRadius:5},
+  na:{color:"#c9a84c",background:"rgba(201,168,76,.1)"},
+  main:{maxWidth:960,margin:"0 auto",padding:"16px 12px 40px"},
+  cg:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:7,marginBottom:18},
+  cd:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:7,padding:"10px 12px"},
+  cl:{fontSize:9,color:"#6e6b63",letterSpacing:.5,textTransform:"uppercase",marginBottom:2},
+  cv:{fontSize:19,fontWeight:700,color:"#e0ddd5"},
+  cs:{fontSize:10,color:"#8a877e",marginTop:1},
+  sec:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:7,padding:"14px 16px",marginBottom:12},
+  st:{fontSize:13,fontWeight:600,color:"#e0ddd5",letterSpacing:.3},
+  tbl:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:11},
+  th:{textAlign:"left",padding:"6px 7px",color:"#6e6b63",fontSize:9,fontWeight:500,borderBottom:"1px solid #1a1d28",textTransform:"uppercase",letterSpacing:.3},
+  td:{padding:"5px 7px",borderBottom:"1px solid #111320",verticalAlign:"middle"},
+  tk:{display:"inline-block",background:"#1a1d28",color:"#c9a84c",fontSize:10,fontWeight:600,padding:"1px 5px",borderRadius:3},
+  pb:{background:"linear-gradient(135deg,#c9a84c,#a68a3a)",color:"#0a0c12",border:"none",padding:"7px 14px",borderRadius:5,fontSize:12,fontWeight:600},
+  gb:{background:"none",border:"1px solid #2a2d3a",color:"#8a877e",padding:"5px 12px",borderRadius:5,fontSize:11},
+  fb:{background:"none",border:"1px solid #1a1d28",color:"#6e6b63",fontSize:10,padding:"3px 7px",borderRadius:4},
+  fa:{borderColor:"#c9a84c",color:"#c9a84c",background:"rgba(201,168,76,.08)"},
+  ib:{background:"none",border:"1px solid #1a1d28",color:"#6e6b63",width:24,height:24,borderRadius:4,fontSize:11,display:"inline-flex",alignItems:"center",justifyContent:"center",marginLeft:2},
+  lb:{display:"block",fontSize:9,color:"#6e6b63",marginBottom:2,letterSpacing:.4,textTransform:"uppercase"},
+  inp:{background:"#0a0c12",border:"1px solid #1a1d28",color:"#e0ddd5",padding:"7px 9px",borderRadius:5,fontSize:13,width:"100%"},
+  ov:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:14},
+  md:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:10,width:"100%",maxWidth:420,overflow:"hidden"},
+  mh:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:"1px solid #1a1d28"},
+  cb:{background:"none",border:"none",color:"#6e6b63",fontSize:14}
+};
+
+function Modal({open,onClose,title,children}){
+  if(!open)return null;
+  return e("div",{style:S.ov,onClick:onClose},
+    e("div",{style:S.md,onClick:ev=>ev.stopPropagation()},
+      e("div",{style:S.mh},e("h3",{style:{fontSize:14,fontWeight:600,color:"#e0ddd5"}},title),e("button",{style:S.cb,onClick:onClose},"✕")),
+      e("div",{style:{padding:"14px 18px 18px"}},children)));
+}
+
+function App(){
+  const[stocks,setStocks]=useState(INIT);
+  const[tab,setTab]=useState("dashboard");
+  const[updating,setUpdating]=useState(false);
+  const[upProg,setUpProg]=useState("");
+  const[upLog,setUpLog]=useState([]);
+  const[sortK,setSortK]=useState("annualDiv");
+  const[sortA,setSortA]=useState(false);
+  const[fAcc,setFAcc]=useState("all");
+  const[lastUp,setLastUp]=useState(null);
+  const[apiKey,setApiKey]=useState("");
+  const[showM,setShowM]=useState(false);
+  const[editI,setEditI]=useState(-1);
+  const[form,setForm]=useState({t:"",n:"",d:"",shi:"",ki:"",chi:"",ra:""});
+  const[delT,setDelT]=useState(null);
+
+  useEffect(()=>{
+    const d=load();
+    if(d){
+      if(d.stocks?.length)setStocks(d.stocks);
+      if(d.lastUpdated)setLastUp(d.lastUpdated);
+      if(d.apiKey)setApiKey(d.apiKey);
+    }
+  },[]);
+
+  const sv=useCallback((s,lu,ak)=>{persist(s,lu||lastUp,ak||apiKey)},[lastUp,apiKey]);
+
+  // Add/Edit
+  const openAdd=()=>{setForm({t:"",n:"",d:"",shi:"",ki:"",chi:"",ra:""});setEditI(-1);setShowM(true)};
+  const openEdit=(st)=>{
+    setForm({t:st.t,n:st.n,d:String(st.d),shi:String(st.a.shi||""),ki:String(st.a.ki||""),chi:String(st.a.chi||""),ra:String(st.a.ra||"")});
+    setEditI(stocks.findIndex(s=>s.t===st.t));setShowM(true);
+  };
+  const saveSt=()=>{
+    if(!form.t||!form.n)return;
+    const acc={};AK.forEach(k=>{const v=parseInt(form[k]);if(v>0)acc[k]=v});
+    if(!Object.keys(acc).length)return;
+    const entry={t:form.t.toUpperCase(),n:form.n,d:parseFloat(form.d)||0,a:acc};
+    let up;
+    if(editI>=0){up=stocks.map((s,i)=>i===editI?entry:s)}
+    else{if(stocks.find(s=>s.t===entry.t)){alert("同じコードが既にあります");return}up=[...stocks,entry]}
+    setStocks(up);sv(up);setShowM(false);
+  };
+  const confirmDel=()=>{const up=stocks.filter(s=>s.t!==delT);setStocks(up);sv(up);setDelT(null)};
+
+  // Update dividends
+  const updateDiv=async()=>{
+    if(!apiKey){alert("APIキーを設定してください");return}
+    setUpdating(true);setUpLog([]);
+    const up=[...stocks];const bs=15;
+    for(let i=0;i<up.length;i+=bs){
+      const batch=up.slice(i,i+bs);
+      setUpProg(`${i+1}〜${Math.min(i+bs,up.length)} / ${up.length}`);
+      const inp=batch.map(s=>({t:s.t,n:s.n,d:s.d}));
+      try{
+        const resp=await fetch("https://api.anthropic.com/v1/messages",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+          body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1024,
+            system:"あなたは日本株の配当情報データベースです。ユーザーが渡すJSON配列の各銘柄について、最新の予想年間1株配当金(円)に値を更新して返してください。確信がない銘柄はそのままの値を返してください。JSON配列以外のテキストは一切出力禁止です。マークダウンのバッククォートも不要です。",
+            messages:[{role:"user",content:JSON.stringify(inp)+'\n上記の各銘柄のdを最新の予想年間1株配当金(円)に更新して返してください。形式: [{"t":"コード","d":数値}]'}]})
+        });
+        if(!resp.ok)throw new Error("HTTP "+resp.status);
+        const data=await resp.json();
+        let text="";if(Array.isArray(data.content))data.content.forEach(b=>{if(b.type==="text")text+=b.text});
+        const res=extractJSON(text);
+        if(res&&res.length){
+          res.forEach(r=>{const tk=String(r.t);const nd=typeof r.d==="number"?r.d:parseFloat(r.d);
+            const idx=up.findIndex(s=>s.t===tk);
+            if(idx!==-1&&!isNaN(nd)&&nd>=0){const od=up[idx].d;up[idx]={...up[idx],d:nd};
+              const ch=nd>od?"↑":nd<od?"↓":"→";
+              setUpLog(prev=>[...prev,{t:tk,n:up[idx].n,od,nd,ch}])}});
+          batch.forEach(s=>{if(!res.find(r=>String(r.t)===s.t))setUpLog(prev=>[...prev,{t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?"}])});
+        }else{batch.forEach(s=>setUpLog(prev=>[...prev,{t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?"}]))}
+      }catch(err){batch.forEach(s=>setUpLog(prev=>[...prev,{t:s.t,n:s.n,od:s.d,nd:s.d,ch:"!"}]))}
+      if(i+bs<up.length)await new Promise(r=>setTimeout(r,1200));
+    }
+    const now=new Date().toISOString();setStocks(up);setLastUp(now);sv(up,now);setUpdating(false);setUpProg("完了！");
+  };
+
+  // Computed
+  const totDiv=stocks.reduce((s,st)=>s+ad(st),0);
+  const totSh=stocks.reduce((s,st)=>s+ts(st),0);
+  const accT={};AK.forEach(k=>{accT[k]=0});
+  stocks.forEach(st=>Object.entries(st.a).forEach(([k,v])=>{accT[k]=(accT[k]||0)+v*st.d}));
+
+  const filt=fAcc==="all"?stocks:stocks.filter(s=>s.a[fAcc]);
+  const sorted=[...filt].sort((a,b)=>{
+    if(sortK==="annualDiv")return sortA?ad(a)-ad(b):ad(b)-ad(a);
+    if(sortK==="div")return sortA?a.d-b.d:b.d-a.d;
+    if(sortK==="shares")return sortA?ts(a)-ts(b):ts(b)-ts(a);
+    if(sortK==="ticker")return sortA?a.t.localeCompare(b.t):b.t.localeCompare(a.t);
+    return sortA?a.n.localeCompare(b.n):b.n.localeCompare(a.n);
+  });
+  const top10=[...stocks].sort((a,b)=>ad(b)-ad(a)).slice(0,10);
+  const togSort=k=>{if(sortK===k)setSortA(!sortA);else{setSortK(k);setSortA(false)}};
+
+  // ─── Render helpers ───
+  const navBtn=(k,l)=>e("button",{key:k,style:{...S.nb,...(tab===k?S.na:{})},onClick:()=>setTab(k)},l);
+  const accBadge=(k,v)=>e("span",{key:k,style:{fontSize:9,padding:"1px 4px",borderRadius:3,background:AC[k]+"20",color:AC[k],border:"1px solid "+AC[k]+"33"}},AS[k]+v);
+
+  return e("div",{style:S.wrap},
+    // Header
+    e("header",{style:S.hdr},
+      e("div",{style:S.logo},
+        e("span",{style:{fontSize:16,color:"#c9a84c"}},"◆"),
+        e("span",{style:{fontSize:14,fontWeight:700,letterSpacing:1.5}},"配当トラッカー"),
+        e("span",{style:S.badge},stocks.length+"銘柄")),
+      e("nav",{style:S.nav},navBtn("dashboard","ダッシュ"),navBtn("stocks","銘柄"),navBtn("update","更新"))),
+
+    e("main",{style:S.main},
+
+      // ═══ DASHBOARD ═══
+      tab==="dashboard"&&e("div",null,
+        e("div",{style:S.cg},
+          e("div",{style:{...S.cd,borderLeft:"3px solid #c9a84c"}},
+            e("p",{style:S.cl},"予想年間配当"),e("p",{style:S.cv},fmt(totDiv)),e("p",{style:S.cs},"月平均 "+fmt(totDiv/12))),
+          e("div",{style:S.cd},
+            e("p",{style:S.cl},"保有銘柄 / 総株数"),e("p",{style:S.cv},stocks.length,e("span",{style:{fontSize:12,color:"#8a877e"}},"銘柄")),e("p",{style:S.cs},totSh.toLocaleString()+"株")),
+          ...AK.map(k=>e("div",{key:k,style:{...S.cd,borderLeft:"3px solid "+AC[k]}},
+            e("p",{style:S.cl},AS[k]+"："+ACCOUNTS[k]),e("p",{style:{...S.cv,fontSize:17}},fmt(accT[k])),e("p",{style:S.cs},stocks.filter(s=>s.a[k]).length+"銘柄")))
+        ),
+        // TOP10
+        e("div",{style:S.sec},e("h3",{style:S.st},"配当金額 TOP10"),
+          e("div",{style:{marginTop:10}},
+            ...top10.map((st,i)=>{const v=ad(st),mx=ad(top10[0]);
+              return e("div",{key:st.t,style:{display:"flex",alignItems:"center",gap:7,marginBottom:4}},
+                e("span",{style:{width:34,fontSize:10,color:"#6e6b63",textAlign:"right"}},st.t),
+                e("span",{style:{width:80,fontSize:10,color:"#b0ad9f",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},st.n),
+                e("div",{style:{flex:1,height:16,background:"#141620",borderRadius:3,overflow:"hidden"}},
+                  e("div",{style:{width:(v/mx*100)+"%",height:"100%",background:"linear-gradient(90deg,#c9a84c,"+(i<3?"#e7c86e":"#8a7330")+")",borderRadius:3,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4}},
+                    e("span",{style:{fontSize:8,color:"#0a0c12",fontWeight:700}},fmt(v)))))}))),
+        // Account bar
+        e("div",{style:S.sec},e("h3",{style:S.st},"口座別割合"),
+          e("div",{style:{display:"flex",height:24,borderRadius:5,overflow:"hidden",marginTop:8}},
+            ...AK.map(k=>{const p=totDiv>0?accT[k]/totDiv*100:0;return p>0.5?e("div",{key:k,style:{width:p+"%",background:AC[k],display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#0a0c12",fontWeight:700}},p>6?AS[k]+" "+p.toFixed(0)+"%":""):null})),
+          e("div",{style:{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}},
+            ...AK.map(k=>e("div",{key:k,style:{display:"flex",alignItems:"center",gap:3}},
+              e("div",{style:{width:7,height:7,borderRadius:2,background:AC[k]}}),
+              e("span",{style:{fontSize:10,color:"#8a877e"}},AS[k]+"："+ACCOUNTS[k]+" ("+fmt(accT[k])+")"))))),
+        lastUp&&e("p",{style:{fontSize:10,color:"#3a3830",textAlign:"center",marginTop:14}},"最終更新: "+new Date(lastUp).toLocaleString("ja-JP"))
+      ),
+
+      // ═══ STOCKS ═══
+      tab==="stocks"&&e("div",null,
+        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:6}},
+          e("div",{style:{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}},
+            e("span",{style:{fontSize:10,color:"#6e6b63"}},"口座:"),
+            e("button",{style:{...S.fb,...(fAcc==="all"?S.fa:{})},onClick:()=>setFAcc("all")},"全て"),
+            ...AK.map(k=>e("button",{key:k,style:{...S.fb,...(fAcc===k?{...S.fa,borderColor:AC[k],color:AC[k]}:{})},onClick:()=>setFAcc(k)},AS[k]))),
+          e("button",{style:S.pb,onClick:openAdd},"＋ 追加")),
+        e("div",{style:{overflowX:"auto"}},
+          e("table",{style:S.tbl},
+            e("thead",null,e("tr",null,
+              ...([["ticker","コード"],["name","銘柄"],["shares","株数"],["div","1株配当"],["annualDiv","年間配当"]].map(([k,l])=>
+                e("th",{key:k,style:{...S.th,cursor:"pointer",userSelect:"none",textAlign:k==="name"?"left":"right"},onClick:()=>togSort(k)},l+(sortK===k?(sortA?" ▲":" ▼"):"")))),
+              e("th",{style:S.th},"口座"),e("th",{style:{...S.th,width:50,textAlign:"center"}},""))),
+            e("tbody",null,...sorted.map(st=>
+              e("tr",{key:st.t},
+                e("td",{style:{...S.td,textAlign:"right"}},e("span",{style:S.tk},st.t)),
+                e("td",{style:S.td},st.n),
+                e("td",{style:{...S.td,textAlign:"right"}},ts(st).toLocaleString()),
+                e("td",{style:{...S.td,textAlign:"right",color:st.d>0?"#e0ddd5":"#e87561"}},st.d>0?"¥"+st.d:"無配"),
+                e("td",{style:{...S.td,textAlign:"right",fontWeight:600,color:"#c9a84c"}},fmt(ad(st))),
+                e("td",{style:S.td},e("div",{style:{display:"flex",gap:2,flexWrap:"wrap"}},...Object.entries(st.a).map(([k,v])=>accBadge(k,v)))),
+                e("td",{style:{...S.td,textAlign:"center"}},
+                  e("button",{style:S.ib,onClick:()=>openEdit(st),title:"編集"},"✎"),
+                  e("button",{style:{...S.ib,color:"#e87561"},onClick:()=>setDelT(st.t),title:"削除"},"✕"))))),
+            e("tfoot",null,e("tr",{style:{borderTop:"1px solid #2a2d3a"}},
+              e("td",{colSpan:2,style:{...S.td,fontWeight:600}},"合計 ("+sorted.length+"銘柄)"),
+              e("td",{style:{...S.td,textAlign:"right",fontWeight:600}},sorted.reduce((s,st)=>s+ts(st),0).toLocaleString()),
+              e("td",{style:S.td}),
+              e("td",{style:{...S.td,textAlign:"right",fontWeight:700,color:"#c9a84c",fontSize:13}},fmt(sorted.reduce((s,st)=>s+ad(st),0))),
+              e("td",{colSpan:2,style:S.td})))))),
+
+      // ═══ UPDATE ═══
+      tab==="update"&&e("div",null,
+        // API Key
+        e("div",{style:S.sec},
+          e("h3",{style:S.st},"APIキー設定"),
+          e("p",{style:{fontSize:11,color:"#8a877e",marginTop:4}},"Anthropic APIキーを入力してください。端末内に保存されます。"),
+          e("div",{style:{marginTop:8,display:"flex",gap:6}},
+            e("input",{style:{...S.inp,flex:1,fontSize:12},type:"password",placeholder:"sk-ant-...",value:apiKey,
+              onChange:ev=>{setApiKey(ev.target.value);sv(stocks,lastUp,ev.target.value)}}),
+            apiKey&&e("span",{style:{fontSize:10,color:"#6ee7a8",alignSelf:"center"}},"✓ 設定済"))),
+        // Update
+        e("div",{style:{...S.sec,marginTop:10}},
+          e("h3",{style:S.st},"配当情報を更新"),
+          e("p",{style:{fontSize:11,color:"#8a877e",marginTop:4,lineHeight:1.6}},
+            "AIが"+stocks.length+"銘柄の最新予想配当を取得します。"),
+          lastUp&&e("p",{style:{fontSize:10,color:"#6e6b63",marginTop:4}},"前回: "+new Date(lastUp).toLocaleString("ja-JP")),
+          e("div",{style:{marginTop:12,display:"flex",gap:8,alignItems:"center"}},
+            e("button",{style:{...S.pb,opacity:updating?.5:1},disabled:updating,onClick:updateDiv},
+              updating?"更新中...":"🔄 配当更新"),
+            updating&&e("span",{style:{fontSize:11,color:"#c9a84c",animation:"pulse 1.2s infinite"}},upProg))),
+        // Log
+        upLog.length>0&&e("div",{style:{...S.sec,marginTop:10}},
+          e("h3",{style:S.st},"更新結果"),
+          e("div",{style:{overflowX:"auto",marginTop:6}},
+            e("table",{style:S.tbl},
+              e("thead",null,e("tr",null,e("th",{style:S.th},"コード"),e("th",{style:S.th},"銘柄"),e("th",{style:{...S.th,textAlign:"right"}},"旧"),e("th",{style:{...S.th,textAlign:"center"}},""),e("th",{style:{...S.th,textAlign:"right"}},"新"))),
+              e("tbody",null,...upLog.map((l,i)=>
+                e("tr",{key:i},
+                  e("td",{style:S.td},e("span",{style:S.tk},l.t)),
+                  e("td",{style:S.td},l.n),
+                  e("td",{style:{...S.td,textAlign:"right"}},"¥"+l.od),
+                  e("td",{style:{...S.td,textAlign:"center",fontSize:14,color:l.ch==="↑"?"#6ee7a8":l.ch==="↓"?"#e87561":"#6e6b63"}},l.ch),
+                  e("td",{style:{...S.td,textAlign:"right",fontWeight:600,color:l.ch==="↑"?"#6ee7a8":l.ch==="↓"?"#e87561":"#e0ddd5"}},"¥"+l.nd)))))),
+          e("div",{style:{marginTop:8,padding:"6px 10px",background:"#141620",borderRadius:4,fontSize:10,color:"#8a877e"}},
+            upLog.filter(l=>l.ch==="↑").length+"件増配 / "+upLog.filter(l=>l.ch==="↓").length+"件減配 / "+upLog.filter(l=>l.ch==="→").length+"件変更なし")),
+        // Reset
+        e("div",{style:{textAlign:"center",marginTop:24}},
+          e("button",{style:S.gb,onClick:()=>{if(confirm("初期データに戻す？")){setStocks(INIT);setLastUp(null);setUpLog([]);sv(INIT,null)}}},"初期データにリセット"))
+      )
+    ),
+
+    // ─── Add/Edit Modal ───
+    Modal({open:showM,onClose:()=>setShowM(false),title:editI>=0?"銘柄を編集":"銘柄を追加",children:
+      e("div",null,
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+          e("div",null,e("label",{style:S.lb},"証券コード"),
+            e("input",{style:S.inp,value:form.t,disabled:editI>=0,placeholder:"例: 2914",onChange:ev=>setForm({...form,t:ev.target.value})})),
+          e("div",null,e("label",{style:S.lb},"銘柄名"),
+            e("input",{style:S.inp,value:form.n,placeholder:"例: JT",onChange:ev=>setForm({...form,n:ev.target.value})})),
+          e("div",{style:{gridColumn:"1/-1"}},e("label",{style:S.lb},"予想年間1株配当(円)"),
+            e("input",{style:S.inp,type:"number",value:form.d,placeholder:"例: 234",onChange:ev=>setForm({...form,d:ev.target.value})})),
+          ...AK.map(k=>e("div",{key:k},e("label",{style:{...S.lb,color:AC[k]}},AS[k]+"："+ACCOUNTS[k]+" (株数)"),
+            e("input",{style:S.inp,type:"number",value:form[k],placeholder:"0",onChange:ev=>setForm({...form,[k]:ev.target.value})})))
+        ),
+        e("div",{style:{display:"flex",justifyContent:"flex-end",gap:6,marginTop:14}},
+          e("button",{style:S.gb,onClick:()=>setShowM(false)},"キャンセル"),
+          e("button",{style:S.pb,onClick:saveSt},editI>=0?"保存":"追加")))}),
+
+    // ─── Delete Modal ───
+    Modal({open:!!delT,onClose:()=>setDelT(null),title:"銘柄を削除",children:
+      e("div",null,
+        e("p",{style:{fontSize:12,color:"#b0ad9f",marginBottom:14}},
+          e("span",{style:S.tk},delT)," ",stocks.find(s=>s.t===delT)?.n," を削除しますか？"),
+        e("div",{style:{display:"flex",justifyContent:"flex-end",gap:6}},
+          e("button",{style:S.gb,onClick:()=>setDelT(null)},"キャンセル"),
+          e("button",{style:{...S.pb,background:"linear-gradient(135deg,#e87561,#c25444)"},onClick:confirmDel},"削除")))})
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+</script>
+</body>
+</html>
