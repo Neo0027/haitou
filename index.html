@@ -241,6 +241,7 @@ function App(){
   const updateDiv=async()=>{
     setUpdating(true);setUpLog([]);setSplits([]);
     const up=[...stocks];const cc=3;
+    const allSplits=[];const allLogs=[];
     for(let i=0;i<up.length;i+=cc){
       const batch=up.slice(i,i+cc);
       setUpProg((i+1)+"〜"+Math.min(i+cc,up.length)+" / "+up.length);
@@ -249,16 +250,18 @@ function App(){
         const s=batch[j];const idx=up.findIndex(x=>x.t===s.t);
         if(nd!==null&&!isNaN(nd)&&nd>=0){
           const od=up[idx].d;
-          // Split detection
           const splitR=detectSplit(od,nd);
           if(splitR){
-            setSplits(prev=>[...prev,{t:s.t,n:s.n,ratio:splitR,oldDiv:od,newDiv:nd}]);
+            allSplits.push({t:s.t,n:s.n,ratio:splitR,oldDiv:od,newDiv:nd});
           }
           up[idx]={...up[idx],d:nd};
           const ch=nd>od?"↑":nd<od?"↓":"→";
-          setUpLog(prev=>[...prev,{t:s.t,n:s.n,od,nd,ch,split:splitR}]);
-        }else{setUpLog(prev=>[...prev,{t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?"}])}
+          allLogs.push({t:s.t,n:s.n,od,nd,ch,split:splitR});
+        }else{allLogs.push({t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?"})}
       });
+      // 途中経過をUIに反映
+      setUpLog([...allLogs]);
+      setSplits([...allSplits]);
       if(i+cc<up.length)await new Promise(r=>setTimeout(r,800));
     }
     const now=new Date().toISOString();setStocks(up);setLastUp(now);await sv(up,now);setUpdating(false);setUpProg("完了！");
