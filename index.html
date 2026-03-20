@@ -34,7 +34,7 @@ const fbGet=async(p)=>{const r=await fetch(FB_URL+"/"+p+".json");return r.ok?r.j
 const fbSet=async(p,d)=>{await fetch(FB_URL+"/"+p+".json",{method:"PUT",body:JSON.stringify(d)})};
 
 // ─── Constants ───
-const ACCOUNTS={shi:"カブコム",ki:"恭輔楽天",chi:"千早口座",ra:"知穂楽天"};
+const ACCOUNTS={shi:"カブコム",ki:"恭輔楽天",chi:"千早口座",ra:"知穂楒天"};
 const AC={shi:"#e87561",ki:"#6ea8e7",chi:"#6ee7a8",ra:"#d4a6e7"};
 const AS={shi:"シ",ki:"キ",chi:"チ",ra:"ラ"};
 const AK=Object.keys(ACCOUNTS);
@@ -53,7 +53,7 @@ const INIT=[
 {t:"3387",n:"クリレス",a:{ki:200},d:24},{t:"3548",n:"バロック",a:{ki:1000,ra:500},d:66},
 {t:"3612",n:"ワールド",a:{ra:100},d:96},{t:"3825",n:"リミックスポイント",a:{shi:200},d:0},
 {t:"4188",n:"三菱ケミカル",a:{shi:100},d:36},{t:"4502",n:"武田薬品工業",a:{ki:100,chi:100},d:196},
-{t:"4927",n:"ポール",a:{ki:100,ra:100},d:30},{t:"5019",n:"出光興産",a:{shi:100},d:34},
+{t:"4927",n:"ポーラ",a:{ki:100,ra:100},d:30},{t:"5019",n:"出光興産",a:{shi:100},d:34},
 {t:"5216",n:"リソル",a:{ki:300},d:120},{t:"5301",n:"東海カーボン",a:{ki:100,ra:100},d:48},
 {t:"5411",n:"JFE",a:{shi:200},d:100},{t:"5857",n:"アサヒHD",a:{shi:200},d:95},
 {t:"5938",n:"LIXIL",a:{shi:100},d:90},{t:"6339",n:"新東工業",a:{shi:100,chi:100},d:70},
@@ -384,6 +384,7 @@ function App(){
     if(sortK==="annualDiv")return sortA?adv(a)-adv(b):adv(b)-adv(a);
     if(sortK==="div")return sortA?a.d-b.d:b.d-a.d;
     if(sortK==="shares")return sortA?tsh(a)-tsh(b):tsh(b)-tsh(a);
+    if(sortK==="price")return sortA?(a.p||0)-(b.p||0):(b.p||0)-(a.p||0);
     if(sortK==="yield")return sortA?yld(a)-yld(b):yld(b)-yld(a);
     if(sortK==="ticker")return sortA?a.t.localeCompare(b.t):b.t.localeCompare(a.t);
     return sortA?a.n.localeCompare(b.n):b.n.localeCompare(a.n);
@@ -450,9 +451,6 @@ function App(){
             h("p",{style:S.cl},"予想年間配当"),h("p",{style:S.cv},fmt(totDiv)),h("p",{style:S.cs},"月平均 "+fmt(totDiv/12))),
           h("div",{style:S.cd},
             h("p",{style:S.cl},"保有銘柄 / 総株数"),h("p",{style:S.cv},stocks.length,h("span",{style:{fontSize:12,color:"#8a877e"}},"銘柄")),h("p",{style:S.cs},totSh.toLocaleString()+"株")),
-          h("div",{style:{...S.cd,borderLeft:"3px solid #6ee7a8"}},
-            h("p",{style:S.cl},"平均配当利回り"),h("p",{style:{...S.cv,color:avgYield>=3?"#6ee7a8":"#e0ddd5"}},avgYield>0?avgYield.toFixed(2)+"%":"---"),
-            h("p",{style:S.cs},stocksWithPrice.length+"/"+stocks.length+"銘柄 株価取得済")),
           ...AK.map(k=>h("div",{key:k,style:{...S.cd,borderLeft:"3px solid "+AC[k]}},
             h("p",{style:S.cl},AS[k]+"："+ACCOUNTS[k]),h("p",{style:{...S.cv,fontSize:17}},fmt(accT[k])),h("p",{style:S.cs},stocks.filter(s=>s.a[k]).length+"銘柄")))),
 
@@ -513,7 +511,7 @@ function App(){
         h("div",{style:{overflowX:"auto"}},
           h("table",{style:S.tbl},
             h("thead",null,h("tr",null,
-              ...([["ticker","コード"],["name","銘柄"],["shares","株数"],["div","1株配当"],["yield","利回り"],["annualDiv","年間配当"]].map(([k,l])=>
+              ...([["ticker","コード"],["name","銘柄"],["shares","株数"],["div","1株配当"],["price","株価"],["yield","利回り"],["annualDiv","年間配当"]].map(([k,l])=>
                 h("th",{key:k,style:{...S.th,cursor:"pointer",userSelect:"none",textAlign:k==="name"?"left":"right"},onClick:()=>togSort(k)},l+(sortK===k?(sortA?" ▲":" ▼"):"")))),
               h("th",{style:S.th},"口座"),h("th",{style:{...S.th,width:50,textAlign:"center"}},""))),
             h("tbody",null,...sorted.map(st=>
@@ -522,6 +520,7 @@ function App(){
                 h("td",{style:S.td},st.n),
                 h("td",{style:{...S.td,textAlign:"right"}},tsh(st).toLocaleString()),
                 h("td",{style:{...S.td,textAlign:"right",color:st.d>0?"#e0ddd5":"#e87561"}},st.d>0?"¥"+st.d:"無配"),
+                h("td",{style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},st.p>0?"¥"+st.p.toLocaleString():"---"),
                 h("td",{style:{...S.td,textAlign:"right",color:yld(st)>=4?"#6ee7a8":yld(st)>=2?"#c9a84c":"#8a877e"}},
                   st.p>0?yld(st).toFixed(2)+"%":h("span",{style:{color:"#3a3830"}},"---")),
                 h("td",{style:{...S.td,textAlign:"right",fontWeight:600,color:"#c9a84c"}},fmt(adv(st))),
@@ -532,6 +531,7 @@ function App(){
             h("tfoot",null,h("tr",{style:{borderTop:"1px solid #2a2d3a"}},
               h("td",{colSpan:2,style:{...S.td,fontWeight:600}},"合計 ("+sorted.length+"銘柄)"),
               h("td",{style:{...S.td,textAlign:"right",fontWeight:600}},sorted.reduce((s,st)=>s+tsh(st),0).toLocaleString()),
+              h("td",{style:S.td}),
               h("td",{style:S.td}),
               h("td",{style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},avgYield>0?avgYield.toFixed(2)+"%":""),
               h("td",{style:{...S.td,textAlign:"right",fontWeight:700,color:"#c9a84c",fontSize:13}},fmt(sorted.reduce((s,st)=>s+adv(st),0))),
