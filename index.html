@@ -34,7 +34,7 @@ const fbGet=async(p)=>{const r=await fetch(FB_URL+"/"+p+".json");return r.ok?r.j
 const fbSet=async(p,d)=>{await fetch(FB_URL+"/"+p+".json",{method:"PUT",body:JSON.stringify(d)})};
 
 // ─── Constants ───
-const ACCOUNTS={shi:"カブコム",ki:"恭輔楽天",chi:"千早口座",ra:"知穂楒天"};
+const ACCOUNTS={shi:"カブコム",ki:"恭輔楽天",chi:"千早口座",ra:"知穂楽天"};
 const AC={shi:"#e87561",ki:"#6ea8e7",chi:"#6ee7a8",ra:"#d4a6e7"};
 const AS={shi:"シ",ki:"キ",chi:"チ",ra:"ラ"};
 const AK=Object.keys(ACCOUNTS);
@@ -181,6 +181,7 @@ function App(){
   const[form,setForm]=uS({t:"",n:"",d:"",shi:"",ki:"",chi:"",ra:"",m:[]});
   const[delT,setDelT]=uS(null);
   const[splits,setSplits]=uS([]);
+  const[calMonth,setCalMonth]=uS(null); // 0-indexed month for calendar detail
   const[synced,setSynced]=uS(false);
   const[lookingUp,setLookingUp]=uS(false);
   const lookupTmr=uR(null);
@@ -191,6 +192,8 @@ function App(){
       try{
         const d=await fbGet("data");
         if(d&&d.stocks&&d.stocks.length){
+          // Normalize m arrays (Firebase RTDB may convert arrays to objects)
+          d.stocks.forEach(s=>{if(s.m&&!Array.isArray(s.m))s.m=Object.values(s.m).map(Number)});
           setStocks(d.stocks);
           if(d.lastUpdated)setLastUp(d.lastUpdated);
           setSynced(true);
@@ -230,7 +233,7 @@ function App(){
         const tm=html.match(/<title>([^<]+)<\/title>/);
         if(tm){const nm=tm[1].match(/^(.+?)[\s【\[(（]/);if(nm)name=nm[1].trim()}
         // Price - look for current price patterns
-        let pm=stripped.match(/現在値[^\d]*([\d,]+(?:\.\d+)?)/);
+        let pm=stripped.match(/現在值[^\d]*([\d,]+(?:\.\d+)?)/);
         if(!pm)pm=stripped.match(/data-field="priceField"[^>]*>([\d,]+)/i);
         if(!pm){const pm2=html.match(/class="[^"]*StoksPrice[^"]*"[^>]*>([\d,]+(?:\.\d+)?)/i);if(pm2)pm=pm2}
         if(!pm){pm=stripped.match(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\s*円?\s*(?:前日比|前営業日比)/)}
@@ -302,7 +305,8 @@ function App(){
   // ─── Add/Edit ───
   const openAdd=()=>{setForm({t:"",n:"",d:"",shi:"",ki:"",chi:"",ra:"",m:[]});setEditI(-1);setShowM(true)};
   const openEdit=(st)=>{
-    setForm({t:st.t,n:st.n,d:String(st.d),shi:String(st.a.shi||""),ki:String(st.a.ki||""),chi:String(st.a.chi||""),ra:String(st.a.ra||""),m:st.m||[]});
+    const mArr=st.m?(Array.isArray(st.m)?st.m:Object.values(st.m).map(Number)):[];
+    setForm({t:st.t,n:st.n,d:String(st.d),shi:String(st.a.shi||""),ki:String(st.a.ki||""),chi:String(st.a.chi||""),ra:String(st.a.ra||""),m:mArr});
     setEditI(stocks.findIndex(s=>s.t===st.t));setShowM(true);
   };
   const saveSt=async()=>{
@@ -457,13 +461,33 @@ function App(){
         // Monthly Calendar
         h("div",{style:S.sec},
           h("h3",{style:S.st},"月別配当カレンダー"),
-          h("p",{style:{fontSize:9,color:"#6e6b63",marginTop:3}},"支払予定月ごとの配当金額（支払月=権利確定月+約3ヶ月）"),
+          h("p",{style:{fontSize:9,color:"#6e6b63",marginTop:3}},"支払予定月ごとの配当金額（タップで詳細表示）"),
           h("div",{style:S.calG},
-            ...MN.map((mn,i)=>h("div",{key:i,style:{...S.calC,...(i===curMonth?S.calCur:{})}},
+            ...MN.map((mn,i)=>h("div",{key:i,style:{...S.calC,...(i===curMonth?S.calCur:{}),...(calMonth===i?{borderColor:"#c9a84c",background:"#161820"}:{}),cursor:"pointer"},onClick:()=>setCalMonth(calMonth===i?null:i)},
               h("div",{style:{...S.calM,...(i===curMonth?{color:"#c9a84c"}:{})}},mn,i===curMonth?" ★":""),
               h("div",{style:S.calV},monthlyDiv[i]>0?fmt(monthlyDiv[i]):"—"),
               h("div",{style:S.calN},monthlyCnt[i]>0?monthlyCnt[i]+"銘柄":""),
-              monthlyDiv[i]>0&&h("div",{style:{...S.calBar,width:(monthlyDiv[i]/maxMonthDiv*100)+"%",background:i===curMonth?"#c9a84c":"#2a4a6e"}}))))),
+              monthlyDiv[i]>0&&h("div",{style:{...S.calBar,width:(monthlyDiv[i]/maxMonthDiv*100)+"%",background:i===curMonth?"#c9a84c":"#2a4a6e"}})))),
+          // Calendar detail
+          calMonth!==null&&(()=>{
+            const cm=calMonth+1;
+            const mStocks=stocks.filter(st=>{const ms=(st.m&&st.m.length>0)?st.m:[6,12];return ms.includes(cm)})
+              .map(st=>{const ms=(st.m&&st.m.length>0)?st.m:[6,12];const perPay=adv(st)/ms.length;return{...st,perPay}})
+              .sort((a,b)=>b.perPay-a.perPay);
+            const mTotal=mStocks.reduce((s,st)=>s+st.perPay,0);
+            return h("div",{style:{marginTop:10,background:"#0d0f17",borderRadius:6,border:"1px solid #c9a84c33",padding:"10px 12px"}},
+              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+                h("span",{style:{fontSize:12,fontWeight:600,color:"#c9a84c"}},MN[calMonth]+"の配当明細"),
+                h("span",{style:{fontSize:13,fontWeight:700,color:"#e0ddd5"}},fmt(mTotal))),
+              mStocks.length>0?h("div",null,...mStocks.map(st=>
+                h("div",{key:st.t,style:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1a1d2822"}},
+                  h("div",{style:{display:"flex",alignItems:"center",gap:6}},
+                    h("span",{style:S.tk},st.t),
+                    h("span",{style:{fontSize:11,color:"#b0ad9f"}},st.n),
+                    h("div",{style:{display:"flex",gap:2}},...Object.entries(st.a).map(([k,v])=>accBdg(k,v)))),
+                  h("span",{style:{fontSize:12,fontWeight:600,color:"#e0ddd5",whiteSpace:"nowrap"}},fmt(st.perPay))))):
+              h("p",{style:{fontSize:11,color:"#6e6b63",textAlign:"center"}},"該当銘柄なし"));
+          })()),
 
         // Account donut + TOP10
         h("div",{style:{display:"grid",gridTemplateColumns:"170px 1fr",gap:12,marginBottom:12}},
@@ -595,7 +619,7 @@ function App(){
                 onChange:ev=>{if(editI<0)handleTickerChange(ev.target.value)}}),
               lookingUp&&h("span",{style:{...S.spinner,position:"absolute",right:8,top:8}}))),
           h("div",null,h("label",{style:S.lb},"銘柄名",lookingUp?h("span",{style:{color:"#c9a84c",fontSize:8,marginLeft:4}}," 取得中..."):""),h("input",{style:{...S.inp,...(form.n&&editI<0?{borderColor:"#6ee7a822"}:{})},value:form.n,placeholder:editI<0?"自動取得されます":"銘柄名",onChange:ev=>setForm({...form,n:ev.target.value})})),
-          h("div",{style:{gridColumn:"1/-1"}},h("label",{style:S.lb},"予想年間1株配当(円)"),h("input",{style:{...S.inp,...(form.d&&editI<0?{borderColor:"#6ee7a822"}:{})},type:"number",value:form.d,placeholder:editI<0?"自動取得されます":"例: 234",onChange:ev=>setForm({...form,d:ev.target.value})})),
+          h("div",{style:{gridColumn:"1/-1"}},h("label",{style:S.lb},"予想年喓1株配当(円)"),h("input",{style:{...S.inp,...(form.d&&editI<0?{borderColor:"#6ee7a822"}:{})},type:"number",value:form.d,placeholder:editI<0?"自動取得されます":"例: 234",onChange:ev=>setForm({...form,d:ev.target.value})})),
           ...AK.map(k=>h("div",{key:k},h("label",{style:{...S.lb,color:AC[k]}},AS[k]+"："+ACCOUNTS[k]+" (株数)"),h("input",{style:S.inp,type:"number",value:form[k],placeholder:"0",onChange:ev=>setForm({...form,[k]:ev.target.value})})))),
         // Month selector
         h("div",{style:{marginTop:12}},
