@@ -299,7 +299,7 @@ function App(){
           const s=batch[j];const idx=up.findIndex(x=>x.t===s.t);if(idx<0)return;
           if(res.div!=null&&!isNaN(res.div)&&res.div>=0)up[idx]={...up[idx],d:res.div};
           if(res.price)up[idx]={...up[idx],p:res.price};
-          if(res.months&&res.months.length)up[idx]={...up[idx],m:res.months};
+          // Don't overwrite months — user-managed only
         });
         if(i+cc<up.length)await new Promise(r=>setTimeout(r,800));
       }
@@ -412,30 +412,8 @@ function App(){
             if(pm2)price=parseFloat(pm2[1].replace(/,/g,""));
           }
         }
-        // ── Extract dividend months from history ──
-        // Look for "YYYY年MM月期" patterns (fiscal period dates)
-        const periodMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月期/g)];
-        if(periodMatches.length>0){
-          const ms=periodMatches.map(m=>parseInt(m[1]));
-          const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
-          const topMs=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>parseInt(e[0]));
-          if(topMs.length>0&&topMs.length<=4){
-            // These are fiscal period end months; payment is ~3 months later
-            months=topMs.map(m=>((m+2)%12)+1).sort((a,b)=>a-b);
-          }
-        }
-        // Fallback: "YYYY年MM月" without 期
-        if(!months){
-          const dateMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月(?!期)/g)];
-          if(dateMatches.length>0){
-            const ms=dateMatches.map(m=>parseInt(m[1]));
-            const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
-            const topMs=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>parseInt(e[0]));
-            if(topMs.length>0&&topMs.length<=4){
-              months=topMs.map(m=>((m+2)%12)+1).sort((a,b)=>a-b);
-            }
-          }
-        }
+        // Note: month extraction from scraping is unreliable.
+        // Payment months should be set manually by the user via the edit modal.
       }
     }catch(e){console.log("fetchStockFull div error:",ticker,e)}
     return{name,div,price,months};
@@ -449,13 +427,13 @@ function App(){
     try{
       const info=await fetchStockFull(code);
       if(mySeq!==lookupSeq.current)return;
-      const hasData=info&&(info.name||info.div!=null||info.price||info.months);
+      const hasData=info&&(info.name||info.div!=null||info.price);
       if(hasData){
         setForm(prev=>{
           const up={...prev};
           if(info.name&&typeof info.name==="string")up.n=info.name;
           if(info.div!=null&&!isNaN(info.div))up.d=String(info.div);
-          if(info.months&&info.months.length)up.m=info.months;
+          // Months are user-managed — don't auto-fill from scraping
           return up;
         });
       }else{
@@ -546,12 +524,11 @@ function App(){
           if(splitR)allSplits.push({t:s.t,n:s.n,ratio:splitR,oldDiv:od,newDiv:nd});
           up[idx]={...up[idx],d:nd};
           if(res.price)up[idx].p=res.price;
-          if(res.months&&res.months.length)up[idx].m=res.months;
+          // Don't overwrite months — user-managed only
           const ch=nd>od?"↑":nd<od?"↓":"→";
           allLogs.push({t:s.t,n:s.n,od,nd,ch,split:splitR,p:res.price});
         }else{
           if(res.price)up[idx]={...up[idx],p:res.price};
-          if(res.months&&res.months.length)up[idx]={...up[idx],m:res.months};
           allLogs.push({t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?",p:res.price});
         }
       });
@@ -819,7 +796,12 @@ function App(){
                   h("td",{style:{...S.td,textAlign:"right",color:"#8a877e"}},l.p?"¥"+l.p.toLocaleString():"---")))))),
           h("div",{style:{marginTop:8,padding:"6px 10px",background:"#141620",borderRadius:4,fontSize:10,color:"#8a877e"}},
             upLog.filter(l=>l.ch==="↑").length+"件増配 / "+upLog.filter(l=>l.ch==="↓").length+"件減配 / "+upLog.filter(l=>l.ch==="→").length+"件変更なし")),
-        h("div",{style:{textAlign:"center",marginTop:24}},
+        h("div",{style:{textAlign:"center",marginTop:24,display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}},
+          h("button",{style:S.gb,onClick:async()=>{
+            if(confirm("全銘柄の配当支払月をクリアします。よろしいですか？\n（各銘柄の編集画面から再設定できます）")){
+              const up=stocks.map(s=>({...s,m:undefined}));setStocks(up);await sv(up);alert("支払月をクリアしました");
+            }
+          }},"支払月を全クリア"),
           h("button",{style:S.gb,onClick:async()=>{if(confirm("初期データに戻す？")){setStocks(INIT);setLastUp(null);setUpLog([]);setSplits([]);await sv(INIT,null)}}},"初期データにリセット")))),
 
     // ─── Add/Edit Modal ───
