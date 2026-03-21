@@ -21,6 +21,35 @@ body{background:#0a0c12;font-family:'Noto Sans JP',sans-serif;color:#e0ddd5;-web
 button{cursor:pointer;font-family:inherit}button:hover{filter:brightness(1.12)}
 input:focus,select:focus{border-color:#c9a84c!important;outline:none}
 tr:hover td{background:rgba(201,168,76,.03)!important}
+@media(max-width:768px){
+  .dt-grid{grid-template-columns:1fr!important}
+  .cal-grid{grid-template-columns:repeat(3,1fr)!important}
+  .col-price,.col-yield{display:none!important}
+  .stock-tbl{font-size:10px!important}
+  .dash-cards{grid-template-columns:repeat(2,1fr)!important}
+}
+@media(max-width:480px){
+  .dash-cards{grid-template-columns:1fr!important}
+  .cal-grid{grid-template-columns:repeat(2,1fr)!important}
+  .modal-form{grid-template-columns:1fr!important}
+  .cal-detail-row{flex-direction:column!important;align-items:flex-start!important;gap:4px!important}
+  .nav-btns button{font-size:10px!important;padding:6px 7px!important}
+  .hdr-logo span:nth-child(2){font-size:12px!important}
+  .top10-name{max-width:48px!important}
+  .top10-bar-label{font-size:7px!important}
+  .acc-bar-legend{flex-direction:column!important;gap:4px!important}
+}
+@media(max-width:480px){
+  .modal-overlay{align-items:flex-end!important;padding:0!important}
+  .modal-box{border-radius:14px 14px 0 0!important;max-height:90vh!important}
+}
+@media(max-width:360px){
+  .cal-grid{grid-template-columns:repeat(2,1fr)!important}
+  .dash-cards{grid-template-columns:1fr!important}
+  .nav-btns{gap:0!important}
+  .nav-btns button{font-size:9px!important;padding:5px 5px!important}
+  .hdr-logo span:nth-child(2){font-size:11px!important}
+}
 </style>
 </head>
 <body>
@@ -41,7 +70,9 @@ const AK=Object.keys(ACCOUNTS);
 const MN=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
 const PROXIES=[
   u=>"https://api.allorigins.win/get?url="+encodeURIComponent(u),
-  u=>"https://corsproxy.io/?"+encodeURIComponent(u)
+  u=>"https://corsproxy.io/?url="+encodeURIComponent(u),
+  u=>"https://api.codetabs.com/v1/proxy?quest="+encodeURIComponent(u),
+  u=>"https://cors-proxy.htmldriven.com/?url="+encodeURIComponent(u)
 ];
 
 const INIT=[
@@ -86,6 +117,13 @@ function fmt(v){return"¥"+Math.round(Number(v)).toLocaleString("ja-JP")}
 function tsh(s){return Object.values(s.a).reduce((a,b)=>a+b,0)}
 function adv(s){return tsh(s)*s.d}
 function yld(s){return s.p>0?(s.d/s.p*100):0}
+// Normalize m field: always returns number[] or empty array
+function normM(m){
+  if(!m)return[];
+  if(Array.isArray(m))return m.map(Number).filter(v=>v>=1&&v<=12);
+  if(typeof m==="object")return Object.values(m).map(Number).filter(v=>v>=1&&v<=12);
+  return[];
+}
 
 // ─── Split detection ───
 const SPLIT_RATIOS=[2,3,4,5,10,20,25,50];
@@ -101,9 +139,16 @@ async function proxyFetch(url){
   for(const px of PROXIES){
     try{
       const resp=await fetch(px(url),{signal:AbortSignal.timeout(12000)});
-      const data=await resp.json().catch(()=>null);
-      if(data&&data.contents)return data.contents;
-      return await resp.text();
+      if(!resp.ok)continue;
+      const txt=await resp.text();
+      if(!txt||txt.length<100)continue;
+      // allorigins returns JSON with .contents, htmldriven returns JSON with .body
+      try{
+        const j=JSON.parse(txt);
+        if(j&&typeof j.contents==="string"&&j.contents.length>100)return j.contents;
+        if(j&&typeof j.body==="string"&&j.body.length>100)return j.body;
+      }catch(e){}
+      if(txt.includes("<")&&txt.includes("</"))return txt;
     }catch(e){continue}
   }
   return null;
@@ -112,7 +157,7 @@ async function proxyFetch(url){
 // ─── Styles ───
 const S={
   wrap:{minHeight:"100vh",background:"#0a0c12",color:"#e0ddd5",paddingBottom:"env(safe-area-inset-bottom)"},
-  hdr:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",height:54,borderBottom:"1px solid #1a1d28",background:"#0d0f17",position:"sticky",top:0,zIndex:100,paddingTop:"env(safe-area-inset-top)"},
+  hdr:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 10px",height:54,borderBottom:"1px solid #1a1d28",background:"#0d0f17",position:"sticky",top:0,zIndex:100,paddingTop:"env(safe-area-inset-top)",gap:4},
   logo:{display:"flex",alignItems:"center",gap:6},
   badge:{fontSize:9,color:"#6e6b63",background:"#1a1d28",padding:"2px 7px",borderRadius:10},
   syncBadge:{fontSize:8,color:"#6ee7a8",background:"#6ee7a820",padding:"2px 6px",borderRadius:10,marginLeft:4},
@@ -139,7 +184,7 @@ const S={
   lb:{display:"block",fontSize:9,color:"#6e6b63",marginBottom:2,letterSpacing:.4,textTransform:"uppercase"},
   inp:{background:"#0a0c12",border:"1px solid #1a1d28",color:"#e0ddd5",padding:"7px 9px",borderRadius:5,fontSize:13,width:"100%"},
   ov:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:14},
-  md:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:10,width:"100%",maxWidth:420,overflow:"hidden"},
+  md:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:10,width:"100%",maxWidth:420,overflow:"hidden",maxHeight:"85vh"},
   mh:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:"1px solid #1a1d28"},
   xb:{background:"none",border:"none",color:"#6e6b63",fontSize:14},
   splitBox:{background:"#1a1520",border:"1px solid #c9a84c44",borderRadius:7,padding:"12px 14px",marginTop:10},
@@ -160,13 +205,16 @@ const S={
 
 function Modal({open,onClose,title,children}){
   if(!open)return null;
-  return h("div",{style:S.ov,onClick:onClose},
-    h("div",{style:S.md,onClick:ev=>ev.stopPropagation()},
+  return h("div",{className:"modal-overlay",style:S.ov,onClick:onClose},
+    h("div",{className:"modal-box",style:S.md,onClick:ev=>ev.stopPropagation()},
       h("div",{style:S.mh},h("h3",{style:{fontSize:14,fontWeight:600,color:"#e0ddd5"}},title),h("button",{style:S.xb,onClick:onClose},"✕")),
       h("div",{style:{padding:"14px 18px 18px",maxHeight:"70vh",overflowY:"auto"}},children)));
 }
 
 function App(){
+  const[winW,setWinW]=uS(window.innerWidth);
+  uE(()=>{const h=()=>setWinW(window.innerWidth);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[]);
+  const isMobile=winW<480;
   const[stocks,setStocks]=uS(INIT);
   const[tab,setTab]=uS("dashboard");
   const[updating,setUpdating]=uS(false);
@@ -184,32 +232,95 @@ function App(){
   const[calMonth,setCalMonth]=uS(null); // 0-indexed month for calendar detail
   const[synced,setSynced]=uS(false);
   const[lookingUp,setLookingUp]=uS(false);
+  const[lookupErr,setLookupErr]=uS("");
+  const[autoUpdating,setAutoUpdating]=uS(false);
+  const[autoUpProg,setAutoUpProg]=uS("");
   const lookupTmr=uR(null);
+  const lookupSeq=uR(0);
+  const dataLoaded=uR(false);
 
   // ─── Firebase Load ───
   uE(()=>{
     (async()=>{
       try{
         const d=await fbGet("data");
-        if(d&&d.stocks&&d.stocks.length){
-          // Normalize m arrays (Firebase RTDB may convert arrays to objects)
-          d.stocks.forEach(s=>{if(s.m&&!Array.isArray(s.m))s.m=Object.values(s.m).map(Number)});
-          setStocks(d.stocks);
-          if(d.lastUpdated)setLastUp(d.lastUpdated);
+        // Firebase RTDB may convert arrays to objects — normalize stocks array too
+        let stocksArr=d?.stocks;
+        if(stocksArr&&!Array.isArray(stocksArr))stocksArr=Object.values(stocksArr);
+        if(stocksArr&&stocksArr.length){
+          // Normalize m arrays and a objects
+          stocksArr.forEach(s=>{
+            s.m=normM(s.m);
+            if(s.a&&typeof s.a==="object"){Object.keys(s.a).forEach(k=>{s.a[k]=Number(s.a[k])})}
+            if(s.d!=null)s.d=Number(s.d);
+            if(s.p!=null)s.p=Number(s.p);
+          });
+          setStocks(stocksArr);
+          if(d?.lastUpdated)setLastUp(d.lastUpdated);
           setSynced(true);
+          dataLoaded.current=true;
         }else{
           await fbSet("data",{stocks:INIT,lastUpdated:null});
           setSynced(true);
+          dataLoaded.current=true;
         }
       }catch(e){
-        try{const d=JSON.parse(localStorage.getItem("div-fb"));if(d?.stocks)setStocks(d.stocks);if(d?.lastUpdated)setLastUp(d.lastUpdated)}catch(e2){}
+        try{
+          const d=JSON.parse(localStorage.getItem("div-fb"));
+          if(d?.stocks){
+            d.stocks.forEach(s=>{s.m=normM(s.m)});
+            setStocks(d.stocks);
+          }
+          if(d?.lastUpdated)setLastUp(d.lastUpdated);
+          dataLoaded.current=true;
+        }catch(e2){}
       }
     })();
   },[]);
 
+  // ─── Auto-update on load (if data is stale or prices missing) ───
+  uE(()=>{
+    if(!dataLoaded.current)return;
+    // Check if we need auto-update: prices missing or data older than 6 hours
+    const needsUpdate=stocks.some(s=>!s.p||s.p<=0);
+    const staleHours=lastUp?((Date.now()-new Date(lastUp).getTime())/3600000):999;
+    if(!needsUpdate&&staleHours<6)return;
+    // Run background auto-update
+    let cancelled=false;
+    (async()=>{
+      setAutoUpdating(true);
+      const up=[...stocks];const cc=3;
+      for(let i=0;i<up.length;i+=cc){
+        if(cancelled)break;
+        const batch=up.slice(i,i+cc);
+        setAutoUpProg(Math.round((i/up.length)*100)+"%");
+        const results=await Promise.all(batch.map(s=>fetchStockFull(s.t).catch(()=>({name:null,div:null,price:null,months:null}))));
+        results.forEach((res,j)=>{
+          const s=batch[j];const idx=up.findIndex(x=>x.t===s.t);if(idx<0)return;
+          if(res.div!=null&&!isNaN(res.div)&&res.div>=0)up[idx]={...up[idx],d:res.div};
+          if(res.price)up[idx]={...up[idx],p:res.price};
+          if(res.months&&res.months.length)up[idx]={...up[idx],m:res.months};
+        });
+        if(i+cc<up.length)await new Promise(r=>setTimeout(r,800));
+      }
+      if(!cancelled){
+        const now=new Date().toISOString();
+        setStocks(up);setLastUp(now);
+        const normalized=up.map(st=>{const nm=normM(st.m);return{...st,m:nm.length>0?nm:undefined}});
+        const data={stocks:normalized,lastUpdated:now};
+        localStorage.setItem("div-fb",JSON.stringify(data));
+        try{await fbSet("data",data);setSynced(true)}catch(e){setSynced(false)}
+      }
+      setAutoUpdating(false);setAutoUpProg("");
+    })();
+    return()=>{cancelled=true};
+  },[dataLoaded.current]);
+
   // ─── Save ───
   const sv=uC(async(s,lu)=>{
-    const data={stocks:s,lastUpdated:lu||lastUp};
+    // Normalize m arrays before saving (prevent Firebase array→object issues)
+    const normalized=s.map(st=>{const nm=normM(st.m);return{...st,m:nm.length>0?nm:undefined}});
+    const data={stocks:normalized,lastUpdated:lu||lastUp};
     localStorage.setItem("div-fb",JSON.stringify(data));
     try{await fbSet("data",data);setSynced(true)}catch(e){setSynced(false)}
   },[lastUp]);
@@ -217,11 +328,25 @@ function App(){
   const pullSync=async()=>{
     try{
       const d=await fbGet("data");
-      if(d?.stocks){setStocks(d.stocks);if(d.lastUpdated)setLastUp(d.lastUpdated);setSynced(true);alert("同期完了！")}
+      if(d?.stocks){
+        let arr=Array.isArray(d.stocks)?d.stocks:Object.values(d.stocks);
+        arr.forEach(s=>{s.m=normM(s.m);if(s.a)Object.keys(s.a).forEach(k=>{s.a[k]=Number(s.a[k])})});
+        setStocks(arr);if(d.lastUpdated)setLastUp(d.lastUpdated);setSynced(true);alert("同期完了！");
+      }
     }catch(e){alert("同期失敗")}
   };
 
   // ─── Yahoo Finance Scraping ───
+  // Helper: extract from __PRELOADED_STATE__ JSON
+  const extractPreloaded=(html,key)=>{
+    const m=html.match(/__PRELOADED_STATE__\s*=\s*(\{[\s\S]*?\});\s*<\/script/);
+    if(!m)return null;
+    try{const j=JSON.parse(m[1]);
+      // Navigate nested keys like "priceBoard.price"
+      return key.split(".").reduce((o,k)=>o&&o[k],j);
+    }catch(e){return null}
+  };
+
   const fetchStockFull=async(ticker)=>{
     let name=null,div=null,price=null,months=null;
     // Fetch main page for name + price
@@ -229,73 +354,119 @@ function App(){
       const html=await proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T");
       if(html){
         const stripped=html.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
-        // Name from title
+
+        // ── Name extraction ──
+        // Strategy 1: title tag — "ＪＴ【2914】：株価・株式情報 - Yahoo!ファイナンス"
         const tm=html.match(/<title>([^<]+)<\/title>/);
-        if(tm){const nm=tm[1].match(/^(.+?)[\s【\[(（]/);if(nm)name=nm[1].trim()}
-        // Price - look for current price patterns
-        let pm=stripped.match(/現在值[^\d]*([\d,]+(?:\.\d+)?)/);
-        if(!pm)pm=stripped.match(/data-field="priceField"[^>]*>([\d,]+)/i);
-        if(!pm){const pm2=html.match(/class="[^"]*StoksPrice[^"]*"[^>]*>([\d,]+(?:\.\d+)?)/i);if(pm2)pm=pm2}
-        if(!pm){pm=stripped.match(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\s*円?\s*(?:前日比|前営業日比)/)}
-        if(pm)price=parseFloat(pm[1].replace(/,/g,""));
+        if(tm){
+          // Match up to full-width/half-width brackets, colon, pipe
+          let nm=tm[1].match(/^(.+?)\s*[【\[（(：:|\-]/);
+          if(nm)name=nm[1].trim();
+          if(!name){nm=tm[1].match(/^(.+?)\s*(?:株式|$)/);if(nm)name=nm[1].trim()}
+        }
+        // Strategy 2: h1 tag
+        if(!name){const h1=html.match(/<h1[^>]*>([^<]+)<\/h1>/i);if(h1)name=h1[1].replace(/[\s　]+/g," ").trim().split(/[【\[（(：:|]/)[0].trim()}
+        // Strategy 3: og:title
+        if(!name){const og=html.match(/property="og:title"\s+content="([^"]+)"/i);if(og)name=og[1].split(/[【\[（(：:|\-]/)[0].trim()}
+
+        // ── Price extraction ──
+        // Strategy 1: __PRELOADED_STATE__ JSON (most reliable)
+        const prePrice=extractPreloaded(html,"priceBoard.price");
+        if(prePrice)price=parseFloat(String(prePrice).replace(/,/g,""));
+        // Strategy 2: class-based patterns
+        if(!price){const cp=html.match(/class="[^"]*[Pp]rice[^"]*"[^>]*>([\d,]+(?:\.\d+)?)/i);if(cp)price=parseFloat(cp[1].replace(/,/g,""))}
+        // Strategy 3: "現在値" nearby text
+        if(!price){const kv=stripped.match(/現在値[^\d]{0,30}([\d,]+(?:\.\d+)?)/);if(kv)price=parseFloat(kv[1].replace(/,/g,""))}
+        // Strategy 4: number before 前日比
+        if(!price){const fb=stripped.match(/([\d,]{3,10}(?:\.\d+)?)\s*円?\s*(?:前日比|前営業日比)/);if(fb)price=parseFloat(fb[1].replace(/,/g,""))}
+        // Strategy 5: JSON-LD structured data
+        if(!price){const ld=html.match(/"price"\s*:\s*"?([\d,.]+)"?/i);if(ld)price=parseFloat(ld[1].replace(/,/g,""))}
       }
-    }catch(e){}
+    }catch(e){console.log("fetchStockFull main error:",ticker,e)}
     // Fetch dividend page
     try{
       const html2=await proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend");
       if(html2){
         const stripped2=html2.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
-        // Dividend
-        let dm=stripped2.match(/1株当たり配当金[（(]会社予想[）)]\s*[^\d]*([\d,]+\.?\d*)\s*円/);
-        if(!dm)dm=stripped2.match(/1株当たり配当金\s*[^\d]*([\d,]+\.?\d*)\s*円/);
+
+        // ── Dividend extraction ──
+        // Pattern 1: "1株当たり配当金（会社予想）242.00円"
+        let dm=stripped2.match(/1株当たり配当金[（(]会社予想[）)][^\d]{0,20}([\d,]+\.?\d*)\s*円/);
+        // Pattern 2: without 会社予想
+        if(!dm)dm=stripped2.match(/1株当たり配当金[^\d]{0,20}([\d,]+\.?\d*)\s*円/);
+        // Pattern 3: 予想年間配当
+        if(!dm)dm=stripped2.match(/予想[^\d]{0,5}年間配当[^\d]{0,10}([\d,]+\.?\d*)\s*円/);
+        // Pattern 4: general patterns
+        if(!dm)dm=stripped2.match(/年間配当[^\d]{0,15}([\d,]+\.?\d*)\s*円/);
+        // Pattern 5: structured data
+        if(!dm){const ld=html2.match(/"dividendPerShare"\s*:\s*"?([\d,.]+)"?/i);if(ld)dm=ld}
         if(dm)div=parseFloat(dm[1].replace(/,/g,""));
+
         // Price from dividend page if not found on main
         if(!price){
-          let pm2=stripped2.match(/現在値[^\d]*([\d,]+(?:\.\d+)?)/);
-          if(!pm2)pm2=stripped2.match(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\s*円?\s*(?:前日比|前営業日比)/);
-          if(pm2)price=parseFloat(pm2[1].replace(/,/g,""));
+          const prePrice2=extractPreloaded(html2,"priceBoard.price");
+          if(prePrice2)price=parseFloat(String(prePrice2).replace(/,/g,""));
+          if(!price){
+            let pm2=stripped2.match(/現在値[^\d]{0,30}([\d,]+(?:\.\d+)?)/);
+            if(!pm2)pm2=stripped2.match(/([\d,]{3,10}(?:\.\d+)?)\s*円?\s*(?:前日比|前営業日比)/);
+            if(pm2)price=parseFloat(pm2[1].replace(/,/g,""));
+          }
         }
-        // Extract dividend months from history
-        // Look for patterns like "2024年3月" near dividend info
-        const dateMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月/g)];
-        if(dateMatches.length>0){
-          // Get months from recent dividend entries, take unique
-          const ms=dateMatches.map(m=>parseInt(m[1]));
-          // Count frequency of each month
+        // ── Extract dividend months from history ──
+        // Look for "YYYY年MM月期" patterns (fiscal period dates)
+        const periodMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月期/g)];
+        if(periodMatches.length>0){
+          const ms=periodMatches.map(m=>parseInt(m[1]));
           const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
-          // Top months by frequency (usually 2: interim + final period months)
           const topMs=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>parseInt(e[0]));
           if(topMs.length>0&&topMs.length<=4){
-            // These are fiscal period months; payment is ~3 months later
+            // These are fiscal period end months; payment is ~3 months later
             months=topMs.map(m=>((m+2)%12)+1).sort((a,b)=>a-b);
           }
         }
+        // Fallback: "YYYY年MM月" without 期
+        if(!months){
+          const dateMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月(?!期)/g)];
+          if(dateMatches.length>0){
+            const ms=dateMatches.map(m=>parseInt(m[1]));
+            const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
+            const topMs=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>parseInt(e[0]));
+            if(topMs.length>0&&topMs.length<=4){
+              months=topMs.map(m=>((m+2)%12)+1).sort((a,b)=>a-b);
+            }
+          }
+        }
       }
-    }catch(e){}
+    }catch(e){console.log("fetchStockFull div error:",ticker,e)}
     return{name,div,price,months};
   };
 
   // ─── Auto-fill on ticker input ───
   const lookupTicker=async(code)=>{
     if(code.length<4)return;
-    setLookingUp(true);
+    const mySeq=++lookupSeq.current;
+    setLookingUp(true);setLookupErr("");
     try{
       const info=await fetchStockFull(code);
-      if(info){
+      if(mySeq!==lookupSeq.current)return;
+      const hasData=info&&(info.name||info.div!=null||info.price||info.months);
+      if(hasData){
         setForm(prev=>{
           const up={...prev};
-          if(info.name&&!prev.n)up.n=info.name;
-          if(info.div!==null)up.d=String(info.div);
+          if(info.name&&typeof info.name==="string")up.n=info.name;
+          if(info.div!=null&&!isNaN(info.div))up.d=String(info.div);
           if(info.months&&info.months.length)up.m=info.months;
           return up;
         });
+      }else{
+        setLookupErr("データを取得できませんでした");
       }
-    }catch(e){}
-    setLookingUp(false);
+    }catch(e){if(mySeq===lookupSeq.current)setLookupErr("取得エラー")}
+    if(mySeq===lookupSeq.current)setLookingUp(false);
   };
 
   const handleTickerChange=(val)=>{
-    setForm(prev=>({...prev,t:val}));
+    setForm(prev=>({...prev,t:val}));setLookupErr("");
     if(lookupTmr.current)clearTimeout(lookupTmr.current);
     if(val.length>=4){
       lookupTmr.current=setTimeout(()=>lookupTicker(val),700);
@@ -303,28 +474,46 @@ function App(){
   };
 
   // ─── Add/Edit ───
+  const closeModal=()=>{if(lookupTmr.current){clearTimeout(lookupTmr.current);lookupTmr.current=null}setLookingUp(false);setLookupErr("");setShowM(false)};
   const openAdd=()=>{setForm({t:"",n:"",d:"",shi:"",ki:"",chi:"",ra:"",m:[]});setEditI(-1);setShowM(true)};
   const openEdit=(st)=>{
-    const mArr=st.m?(Array.isArray(st.m)?st.m:Object.values(st.m).map(Number)):[];
+    const mArr=normM(st.m);
     setForm({t:st.t,n:st.n,d:String(st.d),shi:String(st.a.shi||""),ki:String(st.a.ki||""),chi:String(st.a.chi||""),ra:String(st.a.ra||""),m:mArr});
     setEditI(stocks.findIndex(s=>s.t===st.t));setShowM(true);
   };
   const saveSt=async()=>{
     if(!form.t||!form.n)return;
     const acc={};AK.forEach(k=>{const v=parseInt(form[k]);if(v>0)acc[k]=v});
-    if(!Object.keys(acc).length)return;
+    if(!Object.keys(acc).length){alert("少なくとも1つの口座に株数を入力してください");return}
     const entry={t:form.t.toUpperCase(),n:form.n,d:parseFloat(form.d)||0,a:acc};
-    if(form.m&&form.m.length)entry.m=form.m;
-    // Preserve existing price and months if editing
+    // Use form months, falling back to existing stock months on edit
+    const formMonths=normM(form.m);
     if(editI>=0){
       const old=stocks[editI];
       if(old.p)entry.p=old.p;
-      if(!entry.m&&old.m)entry.m=old.m;
+      const oldMonths=normM(old.m);
+      entry.m=formMonths.length>0?formMonths:(oldMonths.length>0?oldMonths:undefined);
+    }else{
+      if(formMonths.length>0)entry.m=formMonths;
     }
+    // For new stocks, try to fetch price in background after save
+    const isNew=editI<0;
     let up;
     if(editI>=0){up=stocks.map((s,i)=>i===editI?entry:s)}
     else{if(stocks.find(s=>s.t===entry.t)){alert("同じコードが既にあります");return}up=[...stocks,entry]}
-    setStocks(up);await sv(up);setShowM(false);
+    setStocks(up);await sv(up);closeModal();
+    // Background price fetch for new stocks
+    if(isNew&&!entry.p){
+      try{
+        const info=await fetchStockFull(entry.t);
+        if(info&&info.price){
+          setStocks(prev=>{
+            const updated=prev.map(s=>s.t===entry.t?{...s,p:info.price}:s);
+            sv(updated);return updated;
+          });
+        }
+      }catch(e){}
+    }
   };
   const confirmDel=async()=>{const up=stocks.filter(s=>s.t!==delT);setStocks(up);await sv(up);setDelT(null)};
 
@@ -438,19 +627,20 @@ function App(){
   return h("div",{style:S.wrap},
     // ─── Header ───
     h("header",{style:S.hdr},
-      h("div",{style:S.logo},
+      h("div",{style:S.logo,className:"hdr-logo"},
         h("span",{style:{fontSize:16,color:"#c9a84c"}},"◆"),
         h("span",{style:{fontSize:14,fontWeight:700,letterSpacing:1.5}},"配当トラッカー"),
         h("span",{style:S.badge},stocks.length+"銘柄"),
-        synced&&h("span",{style:S.syncBadge},"☁ 同期")),
-      h("nav",{style:S.nav},navBtn("dashboard","ダッシュ"),navBtn("stocks","銘柄"),navBtn("update","更新"))),
+        synced&&!autoUpdating&&h("span",{style:S.syncBadge},"☁ 同期"),
+        autoUpdating&&h("span",{style:{...S.syncBadge,color:"#c9a84c",background:"#c9a84c20"}},h("span",{style:{...S.spinner,width:8,height:8,marginLeft:0,marginRight:4}}),"更新中 "+autoUpProg)),
+      h("nav",{style:S.nav,className:"nav-btns"},navBtn("dashboard","ダッシュ"),navBtn("stocks","銘柄"),navBtn("update","更新"))),
 
     h("main",{style:S.main},
 
       // ═══ DASHBOARD ═══
       tab==="dashboard"&&h("div",null,
         // Summary cards
-        h("div",{style:S.cg},
+        h("div",{style:S.cg,className:"dash-cards"},
           h("div",{style:{...S.cd,borderLeft:"3px solid #c9a84c"}},
             h("p",{style:S.cl},"予想年間配当"),h("p",{style:S.cv},fmt(totDiv)),h("p",{style:S.cs},"月平均 "+fmt(totDiv/12))),
           h("div",{style:S.cd},
@@ -462,7 +652,7 @@ function App(){
         h("div",{style:S.sec},
           h("h3",{style:S.st},"月別配当カレンダー"),
           h("p",{style:{fontSize:9,color:"#6e6b63",marginTop:3}},"支払予定月ごとの配当金額（タップで詳細表示）"),
-          h("div",{style:S.calG},
+          h("div",{style:S.calG,className:"cal-grid"},
             ...MN.map((mn,i)=>h("div",{key:i,style:{...S.calC,...(i===curMonth?S.calCur:{}),...(calMonth===i?{borderColor:"#c9a84c",background:"#161820"}:{}),cursor:"pointer"},onClick:()=>setCalMonth(calMonth===i?null:i)},
               h("div",{style:{...S.calM,...(i===curMonth?{color:"#c9a84c"}:{})}},mn,i===curMonth?" ★":""),
               h("div",{style:S.calV},monthlyDiv[i]>0?fmt(monthlyDiv[i]):"—"),
@@ -480,17 +670,17 @@ function App(){
                 h("span",{style:{fontSize:12,fontWeight:600,color:"#c9a84c"}},MN[calMonth]+"の配当明細"),
                 h("span",{style:{fontSize:13,fontWeight:700,color:"#e0ddd5"}},fmt(mTotal))),
               mStocks.length>0?h("div",null,...mStocks.map(st=>
-                h("div",{key:st.t,style:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1a1d2822"}},
-                  h("div",{style:{display:"flex",alignItems:"center",gap:6}},
+                h("div",{key:st.t,className:"cal-detail-row",style:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1a1d2822",flexWrap:"wrap"}},
+                  h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                     h("span",{style:S.tk},st.t),
                     h("span",{style:{fontSize:11,color:"#b0ad9f"}},st.n),
-                    h("div",{style:{display:"flex",gap:2}},...Object.entries(st.a).map(([k,v])=>accBdg(k,v)))),
+                    h("div",{style:{display:"flex",gap:2,flexWrap:"wrap"}},...Object.entries(st.a).map(([k,v])=>accBdg(k,v)))),
                   h("span",{style:{fontSize:12,fontWeight:600,color:"#e0ddd5",whiteSpace:"nowrap"}},fmt(st.perPay))))):
               h("p",{style:{fontSize:11,color:"#6e6b63",textAlign:"center"}},"該当銘柄なし"));
           })()),
 
         // Account donut + TOP10
-        h("div",{style:{display:"grid",gridTemplateColumns:"170px 1fr",gap:12,marginBottom:12}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"170px 1fr",gap:12,marginBottom:12},className:"dt-grid"},
           // Donut
           h("div",{style:S.sec},
             h("h3",{style:{...S.st,fontSize:11,marginBottom:8}},"口座別割合"),
@@ -504,24 +694,24 @@ function App(){
             h("h3",{style:S.st},"配当金額 TOP10"),
             h("div",{style:{marginTop:8}},
               ...top10.map((st,i)=>{const v=adv(st),mx=adv(top10[0]);
-                return h("div",{key:st.t,style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
-                  h("span",{style:{width:14,fontSize:9,color:"#6e6b63",textAlign:"right"}},i+1),
-                  h("span",{style:{width:32,fontSize:9,color:"#6e6b63",textAlign:"right"}},st.t),
-                  h("span",{style:{width:72,fontSize:9,color:"#b0ad9f",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},st.n),
-                  h("div",{style:{flex:1,height:16,background:"#141620",borderRadius:3,overflow:"hidden"}},
-                    h("div",{style:{width:(v/mx*100)+"%",height:"100%",background:"linear-gradient(90deg,#c9a84c,"+(i<3?"#e7c86e":"#8a7330")+")",borderRadius:3,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4}},
-                      h("span",{style:{fontSize:8,color:"#0a0c12",fontWeight:700}},fmt(v)))),
-                  st.p>0&&h("span",{style:{fontSize:8,color:"#6e6b63",width:38,textAlign:"right"}},yld(st).toFixed(1)+"%"))}))),
+                return h("div",{key:st.t,style:{display:"flex",alignItems:"center",gap:isMobile?3:6,marginBottom:4}},
+                  h("span",{style:{width:14,fontSize:9,color:"#6e6b63",textAlign:"right",flexShrink:0}},i+1),
+                  h("span",{style:{width:isMobile?28:32,fontSize:9,color:"#6e6b63",textAlign:"right",flexShrink:0}},st.t),
+                  !isMobile&&h("span",{className:"top10-name",style:{width:72,fontSize:9,color:"#b0ad9f",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}},st.n),
+                  h("div",{style:{flex:1,height:16,background:"#141620",borderRadius:3,overflow:"hidden",minWidth:0}},
+                    h("div",{style:{width:(v/mx*100)+"%",height:"100%",background:"linear-gradient(90deg,#c9a84c,"+(i<3?"#e7c86e":"#8a7330")+")",borderRadius:3,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4,minWidth:"fit-content"}},
+                      h("span",{className:"top10-bar-label",style:{fontSize:8,color:"#0a0c12",fontWeight:700,whiteSpace:"nowrap"}},fmt(v)))),
+                  st.p>0&&h("span",{style:{fontSize:8,color:"#6e6b63",width:38,textAlign:"right",flexShrink:0}},yld(st).toFixed(1)+"%"))}))),
         ),
 
         // Account bar (compact)
         h("div",{style:S.sec},
           h("div",{style:{display:"flex",height:22,borderRadius:5,overflow:"hidden"}},
             ...AK.map(k=>{const p=totDiv>0?accT[k]/totDiv*100:0;return p>0.5?h("div",{key:k,style:{width:p+"%",background:AC[k],display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#0a0c12",fontWeight:700}},p>6?AS[k]+" "+fmt(accT[k]):""):null})),
-          h("div",{style:{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}},
+          h("div",{className:"acc-bar-legend",style:{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}},
             ...AK.map(k=>h("div",{key:k,style:{display:"flex",alignItems:"center",gap:3}},
-              h("div",{style:{width:7,height:7,borderRadius:2,background:AC[k]}}),
-              h("span",{style:{fontSize:10,color:"#8a877e"}},AS[k]+"："+ACCOUNTS[k]+" ("+fmt(accT[k])+")"))))),
+              h("div",{style:{width:7,height:7,borderRadius:2,background:AC[k],flexShrink:0}}),
+              h("span",{style:{fontSize:10,color:"#8a877e",whiteSpace:"nowrap"}},AS[k]+"："+ACCOUNTS[k]+" ("+fmt(accT[k])+")"))))),
         lastUp&&h("p",{style:{fontSize:10,color:"#3a3830",textAlign:"center",marginTop:14}},"最終更新: "+new Date(lastUp).toLocaleString("ja-JP"))),
 
       // ═══ STOCKS ═══
@@ -532,11 +722,35 @@ function App(){
             h("button",{style:{...S.fb,...(fAcc==="all"?S.fa:{})},onClick:()=>setFAcc("all")},"全て"),
             ...AK.map(k=>h("button",{key:k,style:{...S.fb,...(fAcc===k?{...S.fa,borderColor:AC[k],color:AC[k]}:{})},onClick:()=>setFAcc(k)},AS[k]))),
           h("button",{style:S.pb,onClick:openAdd},"＋ 追加")),
+        isMobile?
+        // ─── Mobile Card Layout ───
+        h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+          ...sorted.map(st=>
+            h("div",{key:st.t,style:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:7,padding:"10px 12px"}},
+              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+                h("div",{style:{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}},
+                  h("span",{style:S.tk},st.t),
+                  h("span",{style:{fontSize:12,fontWeight:500,color:"#e0ddd5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},st.n)),
+                h("div",{style:{display:"flex",gap:2,flexShrink:0}},
+                  h("button",{style:S.ib,onClick:()=>openEdit(st)},"✎"),
+                  h("button",{style:{...S.ib,color:"#e87561"},onClick:()=>setDelT(st.t)},"✕"))),
+              h("div",{style:{display:"flex",gap:10,alignItems:"baseline",marginBottom:4}},
+                h("span",{style:{fontSize:11,color:"#8a877e"}},tsh(st).toLocaleString()+"株"),
+                h("span",{style:{fontSize:11,color:st.d>0?"#e0ddd5":"#e87561"}},st.d>0?"¥"+st.d+"/株":"無配"),
+                h("span",{style:{fontSize:13,fontWeight:700,color:"#c9a84c"}},fmt(adv(st))),
+                st.p>0&&h("span",{style:{fontSize:10,color:yld(st)>=4?"#6ee7a8":yld(st)>=2?"#c9a84c":"#8a877e"}},yld(st).toFixed(1)+"%")),
+              h("div",{style:{display:"flex",gap:3,flexWrap:"wrap",alignItems:"center"}},
+                ...Object.entries(st.a).map(([k,v])=>accBdg(k,v)),
+                st.m&&st.m.length>0&&h("span",{style:{fontSize:8,color:"#6e6b63",marginLeft:4}},st.m.map(m=>m+"月").join("・"))))),
+          h("div",{style:{background:"#11131c",border:"1px solid #1a1d28",borderRadius:7,padding:"10px 12px",textAlign:"center"}},
+            h("span",{style:{fontSize:12,fontWeight:600,color:"#8a877e"}},sorted.length+"銘柄 / "+sorted.reduce((s,st)=>s+tsh(st),0).toLocaleString()+"株 "),
+            h("span",{style:{fontSize:14,fontWeight:700,color:"#c9a84c"}},fmt(sorted.reduce((s,st)=>s+adv(st),0))))):
+        // ─── Desktop Table ───
         h("div",{style:{overflowX:"auto"}},
-          h("table",{style:S.tbl},
+          h("table",{style:S.tbl,className:"stock-tbl"},
             h("thead",null,h("tr",null,
               ...([["ticker","コード"],["name","銘柄"],["shares","株数"],["div","1株配当"],["price","株価"],["yield","利回り"],["annualDiv","年間配当"]].map(([k,l])=>
-                h("th",{key:k,style:{...S.th,cursor:"pointer",userSelect:"none",textAlign:k==="name"?"left":"right"},onClick:()=>togSort(k)},l+(sortK===k?(sortA?" ▲":" ▼"):"")))),
+                h("th",{key:k,className:k==="price"?"col-price":k==="yield"?"col-yield":"",style:{...S.th,cursor:"pointer",userSelect:"none",textAlign:k==="name"?"left":"right"},onClick:()=>togSort(k)},l+(sortK===k?(sortA?" ▲":" ▼"):"")))),
               h("th",{style:S.th},"口座"),h("th",{style:{...S.th,width:50,textAlign:"center"}},""))),
             h("tbody",null,...sorted.map(st=>
               h("tr",{key:st.t},
@@ -544,8 +758,8 @@ function App(){
                 h("td",{style:S.td},st.n),
                 h("td",{style:{...S.td,textAlign:"right"}},tsh(st).toLocaleString()),
                 h("td",{style:{...S.td,textAlign:"right",color:st.d>0?"#e0ddd5":"#e87561"}},st.d>0?"¥"+st.d:"無配"),
-                h("td",{style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},st.p>0?"¥"+st.p.toLocaleString():"---"),
-                h("td",{style:{...S.td,textAlign:"right",color:yld(st)>=4?"#6ee7a8":yld(st)>=2?"#c9a84c":"#8a877e"}},
+                h("td",{className:"col-price",style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},st.p>0?"¥"+st.p.toLocaleString():"---"),
+                h("td",{className:"col-yield",style:{...S.td,textAlign:"right",color:yld(st)>=4?"#6ee7a8":yld(st)>=2?"#c9a84c":"#8a877e"}},
                   st.p>0?yld(st).toFixed(2)+"%":h("span",{style:{color:"#3a3830"}},"---")),
                 h("td",{style:{...S.td,textAlign:"right",fontWeight:600,color:"#c9a84c"}},fmt(adv(st))),
                 h("td",{style:S.td},h("div",{style:{display:"flex",gap:2,flexWrap:"wrap"}},...Object.entries(st.a).map(([k,v])=>accBdg(k,v)))),
@@ -556,8 +770,8 @@ function App(){
               h("td",{colSpan:2,style:{...S.td,fontWeight:600}},"合計 ("+sorted.length+"銘柄)"),
               h("td",{style:{...S.td,textAlign:"right",fontWeight:600}},sorted.reduce((s,st)=>s+tsh(st),0).toLocaleString()),
               h("td",{style:S.td}),
-              h("td",{style:S.td}),
-              h("td",{style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},avgYield>0?avgYield.toFixed(2)+"%":""),
+              h("td",{className:"col-price",style:S.td}),
+              h("td",{className:"col-yield",style:{...S.td,textAlign:"right",fontSize:10,color:"#8a877e"}},avgYield>0?avgYield.toFixed(2)+"%":""),
               h("td",{style:{...S.td,textAlign:"right",fontWeight:700,color:"#c9a84c",fontSize:13}},fmt(sorted.reduce((s,st)=>s+adv(st),0))),
               h("td",{colSpan:2,style:S.td})))))),
 
@@ -609,17 +823,18 @@ function App(){
           h("button",{style:S.gb,onClick:async()=>{if(confirm("初期データに戻す？")){setStocks(INIT);setLastUp(null);setUpLog([]);setSplits([]);await sv(INIT,null)}}},"初期データにリセット")))),
 
     // ─── Add/Edit Modal ───
-    Modal({open:showM,onClose:()=>setShowM(false),title:editI>=0?"銘柄を編集":"銘柄を追加",children:
+    Modal({open:showM,onClose:closeModal,title:editI>=0?"銘柄を編集":"銘柄を追加",children:
       h("div",null,
-        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},className:"modal-form"},
           h("div",null,
             h("label",{style:S.lb},"証券コード"),
             h("div",{style:{position:"relative"}},
               h("input",{style:S.inp,value:form.t,disabled:editI>=0,placeholder:"例: 2914",
                 onChange:ev=>{if(editI<0)handleTickerChange(ev.target.value)}}),
-              lookingUp&&h("span",{style:{...S.spinner,position:"absolute",right:8,top:8}}))),
+              lookingUp&&h("span",{style:{...S.spinner,position:"absolute",right:8,top:8}})),
+            lookupErr&&h("p",{style:{fontSize:9,color:"#e87561",marginTop:3}},lookupErr)),
           h("div",null,h("label",{style:S.lb},"銘柄名",lookingUp?h("span",{style:{color:"#c9a84c",fontSize:8,marginLeft:4}}," 取得中..."):""),h("input",{style:{...S.inp,...(form.n&&editI<0?{borderColor:"#6ee7a822"}:{})},value:form.n,placeholder:editI<0?"自動取得されます":"銘柄名",onChange:ev=>setForm({...form,n:ev.target.value})})),
-          h("div",{style:{gridColumn:"1/-1"}},h("label",{style:S.lb},"予想年喓1株配当(円)"),h("input",{style:{...S.inp,...(form.d&&editI<0?{borderColor:"#6ee7a822"}:{})},type:"number",value:form.d,placeholder:editI<0?"自動取得されます":"例: 234",onChange:ev=>setForm({...form,d:ev.target.value})})),
+          h("div",{style:{gridColumn:"1/-1"}},h("label",{style:S.lb},"予想年間1株配当(円)"),h("input",{style:{...S.inp,...(form.d&&editI<0?{borderColor:"#6ee7a822"}:{})},type:"number",value:form.d,placeholder:editI<0?"自動取得されます":"例: 234",onChange:ev=>setForm({...form,d:ev.target.value})})),
           ...AK.map(k=>h("div",{key:k},h("label",{style:{...S.lb,color:AC[k]}},AS[k]+"："+ACCOUNTS[k]+" (株数)"),h("input",{style:S.inp,type:"number",value:form[k],placeholder:"0",onChange:ev=>setForm({...form,[k]:ev.target.value})})))),
         // Month selector
         h("div",{style:{marginTop:12}},
@@ -627,7 +842,7 @@ function App(){
           h("div",{style:{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}},
             ...MN.map((mn,i)=>h("button",{key:i,type:"button",style:{...S.mBtn,...(form.m&&form.m.includes(i+1)?S.mBtnA:{})},onClick:()=>togMonth(i+1)},i+1)))),
         h("div",{style:{display:"flex",justifyContent:"flex-end",gap:6,marginTop:14}},
-          h("button",{style:S.gb,onClick:()=>setShowM(false)},"キャンセル"),
+          h("button",{style:S.gb,onClick:closeModal},"キャンセル"),
           h("button",{style:S.pb,onClick:saveSt},editI>=0?"保存":"追加")))}),
 
     // ─── Delete Modal ───
