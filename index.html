@@ -244,9 +244,18 @@ function App(){
   const[lookupErr,setLookupErr]=uS("");
   const[autoUpdating,setAutoUpdating]=uS(false);
   const[autoUpProg,setAutoUpProg]=uS("");
+  const[searchQ,setSearchQ]=uS("");
+  const[toast,setToast]=uS(null); // {msg,type:"ok"|"err"}
+  const[confirmDlg,setConfirmDlg]=uS(null); // {title,msg,onOk,danger}
   const lookupTmr=uR(null);
   const lookupSeq=uR(0);
   const dataLoaded=uR(false);
+  const toastTmr=uR(null);
+  const showToast=(msg,type="ok")=>{
+    if(toastTmr.current)clearTimeout(toastTmr.current);
+    setToast({msg,type});
+    toastTmr.current=setTimeout(()=>setToast(null),2500);
+  };
 
   // ─── Firebase Load ───
   uE(()=>{
@@ -341,9 +350,9 @@ function App(){
       if(d?.stocks){
         let arr=Array.isArray(d.stocks)?d.stocks:Object.values(d.stocks);
         arr.forEach(s=>{s.m=normM(s.m);if(s.a)Object.keys(s.a).forEach(k=>{s.a[k]=Number(s.a[k])})});
-        setStocks(arr);if(d.lastUpdated)setLastUp(d.lastUpdated);setSynced(true);alert("同期完了！");
+        setStocks(arr);if(d.lastUpdated)setLastUp(d.lastUpdated);setSynced(true);showToast("同期完了！");
       }
-    }catch(e){alert("同期失敗")}
+    }catch(e){showToast("同期に失敗しました","err")}
   };
 
   // ─── Yahoo Finance Scraping ───
@@ -482,7 +491,7 @@ function App(){
   const saveSt=async()=>{
     if(!form.t||!form.n)return;
     const acc={};AK.forEach(k=>{const v=parseInt(form[k]);if(v>0)acc[k]=v});
-    if(!Object.keys(acc).length){alert("少なくとも1つの口座に株数を入力してください");return}
+    if(!Object.keys(acc).length){showToast("少なくとも1つの口座に株数を入力してください","err");return}
     const entry={t:form.t.toUpperCase(),n:form.n,d:parseFloat(form.d)||0,a:acc};
     // Use form months, falling back to existing stock months on edit
     const formMonths=normM(form.m);
@@ -498,7 +507,7 @@ function App(){
     const isNew=editI<0;
     let up;
     if(editI>=0){up=stocks.map((s,i)=>i===editI?entry:s)}
-    else{if(stocks.find(s=>s.t===entry.t)){alert("同じコードが既にあります");return}up=[...stocks,entry]}
+    else{if(stocks.find(s=>s.t===entry.t)){showToast("同じコードが既にあります","err");return}up=[...stocks,entry]}
     setStocks(up);await sv(up);closeModal();
     // Background price fetch for new stocks
     if(isNew&&!entry.p){
@@ -578,7 +587,8 @@ function App(){
   const totSh=stocks.reduce((s,st)=>s+tsh(st),0);
   const accT={};AK.forEach(k=>{accT[k]=0});
   stocks.forEach(st=>Object.entries(st.a).forEach(([k,v])=>{accT[k]=(accT[k]||0)+v*st.d}));
-  const filt=fAcc==="all"?stocks:stocks.filter(s=>s.a[fAcc]);
+  const filt0=fAcc==="all"?stocks:stocks.filter(s=>s.a[fAcc]);
+  const filt=searchQ?filt0.filter(s=>s.t.toLowerCase().includes(searchQ.toLowerCase())||s.n.toLowerCase().includes(searchQ.toLowerCase())):filt0;
   const sorted=[...filt].sort((a,b)=>{
     if(sortK==="annualDiv")return sortA?adv(a)-adv(b):adv(b)-adv(a);
     if(sortK==="div")return sortA?a.d-b.d:b.d-a.d;
@@ -722,12 +732,16 @@ function App(){
 
       // ═══ STOCKS ═══
       tab==="stocks"&&h("div",null,
-        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:6}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}},
           h("div",{style:{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}},
             h("span",{style:{fontSize:10,color:"#6e6b63"}},"口座:"),
             h("button",{style:{...S.fb,...(fAcc==="all"?S.fa:{})},onClick:()=>setFAcc("all")},"全て"),
             ...AK.map(k=>h("button",{key:k,style:{...S.fb,...(fAcc===k?{...S.fa,borderColor:AC[k],color:AC[k]}:{})},onClick:()=>setFAcc(k)},AS[k]))),
           h("button",{style:S.pb,onClick:openAdd},"＋ 追加")),
+        // Search bar
+        h("div",{style:{position:"relative",marginBottom:10}},
+          h("input",{style:{...S.inp,fontSize:12,padding:"6px 30px 6px 9px"},placeholder:"🔍 コード・銘柄名で検索...",value:searchQ,onChange:ev=>setSearchQ(ev.target.value)}),
+          searchQ&&h("button",{style:{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6e6b63",fontSize:14,padding:2},onClick:()=>setSearchQ("")},"✕")),
         isMobile?
         // ─── Mobile Card Layout ───
         h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
@@ -826,12 +840,12 @@ function App(){
           h("div",{style:{marginTop:8,padding:"6px 10px",background:"#141620",borderRadius:4,fontSize:10,color:"#8a877e"}},
             upLog.filter(l=>l.ch==="↑").length+"件増配 / "+upLog.filter(l=>l.ch==="↓").length+"件減配 / "+upLog.filter(l=>l.ch==="→").length+"件変更なし")),
         h("div",{style:{textAlign:"center",marginTop:24,display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}},
-          h("button",{style:S.gb,onClick:async()=>{
-            if(confirm("全銘柄の配当支払月をクリアします。よろしいですか？\n（各銘柄の編集画面から再設定できます）")){
-              const up=stocks.map(s=>({...s,m:undefined}));setStocks(up);await sv(up);alert("支払月をクリアしました");
-            }
-          }},"支払月を全クリア"),
-          h("button",{style:S.gb,onClick:async()=>{if(confirm("初期データに戻す？")){setStocks(INIT);setLastUp(null);setUpLog([]);setSplits([]);await sv(INIT,null)}}},"初期データにリセット")))),
+          h("button",{style:S.gb,onClick:()=>setConfirmDlg({title:"支払月クリア",msg:"全銘柄の配当支払月をクリアします。\n各銘柄の編集画面から再設定できます。",danger:true,onOk:async()=>{
+            const up=stocks.map(s=>({...s,m:undefined}));setStocks(up);await sv(up);showToast("支払月をクリアしました");
+          }})},"支払月を全クリア"),
+          h("button",{style:S.gb,onClick:()=>setConfirmDlg({title:"初期データリセット",msg:"全てのデータを初期状態に戻します。\nこの操作は取り消せません。",danger:true,onOk:async()=>{
+            setStocks(INIT);setLastUp(null);setUpLog([]);setSplits([]);await sv(INIT,null);showToast("初期データにリセットしました");
+          }})},"初期データにリセット")))),
 
     // ─── Add/Edit Modal ───
     Modal({open:showM,onClose:closeModal,title:editI>=0?"銘柄を編集":"銘柄を追加",children:
@@ -862,7 +876,18 @@ function App(){
         h("p",{style:{fontSize:12,color:"#b0ad9f",marginBottom:14}},h("span",{style:S.tk},delT)," ",stocks.find(s=>s.t===delT)?.n," を削除しますか？"),
         h("div",{style:{display:"flex",justifyContent:"flex-end",gap:6}},
           h("button",{style:S.gb,onClick:()=>setDelT(null)},"キャンセル"),
-          h("button",{style:{...S.pb,background:"linear-gradient(135deg,#e87561,#c25444)"},onClick:confirmDel},"削除")))})
+          h("button",{style:{...S.pb,background:"linear-gradient(135deg,#e87561,#c25444)"},onClick:confirmDel},"削除")))}),
+
+    // ─── Confirm Dialog ───
+    Modal({open:!!confirmDlg,onClose:()=>setConfirmDlg(null),title:confirmDlg?.title||"確認",children:
+      h("div",null,
+        h("p",{style:{fontSize:12,color:"#b0ad9f",marginBottom:14,lineHeight:1.6,whiteSpace:"pre-wrap"}},confirmDlg?.msg),
+        h("div",{style:{display:"flex",justifyContent:"flex-end",gap:6}},
+          h("button",{style:S.gb,onClick:()=>setConfirmDlg(null)},"キャンセル"),
+          h("button",{style:{...S.pb,...(confirmDlg?.danger?{background:"linear-gradient(135deg,#e87561,#c25444)"}:{})},onClick:()=>{confirmDlg?.onOk?.();setConfirmDlg(null)}},"OK")))}),
+
+    // ─── Toast Notification ───
+    toast&&h("div",{style:{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:toast.type==="err"?"#e87561":"#6ee7a8",color:"#0a0c12",padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:600,zIndex:2000,boxShadow:"0 4px 12px rgba(0,0,0,.4)",animation:"pulse .3s",maxWidth:"90vw",textAlign:"center"}},toast.msg)
   );
 }
 
