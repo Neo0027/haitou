@@ -125,6 +125,15 @@ function normM(m){
   return[];
 }
 
+// Fiscal year-end month → estimated payment months
+// 期末配当: 決算月+3ヶ月後, 中間配当: 決算月-3ヶ月後
+function fiscalToPayMonths(fm){
+  if(!fm||fm<1||fm>12)return[];
+  const yearEnd=((fm+2)%12)+1;   // 期末: M+3
+  const interim=((fm-4+12)%12)+1; // 中間: M-3
+  return[yearEnd,interim].sort((a,b)=>a-b);
+}
+
 // ─── Split detection ───
 const SPLIT_RATIOS=[2,3,4,5,10,20,25,50];
 function detectSplit(oldDiv,newDiv){
@@ -299,7 +308,8 @@ function App(){
           const s=batch[j];const idx=up.findIndex(x=>x.t===s.t);if(idx<0)return;
           if(res.div!=null&&!isNaN(res.div)&&res.div>=0)up[idx]={...up[idx],d:res.div};
           if(res.price)up[idx]={...up[idx],p:res.price};
-          // Don't overwrite months — user-managed only
+          // Set months only if not already set (user-managed takes priority)
+          if(res.months&&res.months.length&&!normM(up[idx].m).length)up[idx]={...up[idx],m:res.months};
         });
         if(i+cc<up.length)await new Promise(r=>setTimeout(r,800));
       }
@@ -412,8 +422,18 @@ function App(){
             if(pm2)price=parseFloat(pm2[1].replace(/,/g,""));
           }
         }
-        // Note: month extraction from scraping is unreliable.
-        // Payment months should be set manually by the user via the edit modal.
+        // ── Extract fiscal year-end month → derive payment months ──
+        // Look for "YYYY年MM月期" patterns (e.g. "2026年12月期" → fiscal month = 12)
+        const periodMatches=[...stripped2.matchAll(/20\d{2}年(\d{1,2})月期/g)];
+        if(periodMatches.length>0){
+          const ms=periodMatches.map(m=>parseInt(m[1]));
+          const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
+          // Most frequent month = fiscal year-end month
+          const fiscalMonth=parseInt(Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0]);
+          if(fiscalMonth>=1&&fiscalMonth<=12){
+            months=fiscalToPayMonths(fiscalMonth);
+          }
+        }
       }
     }catch(e){console.log("fetchStockFull div error:",ticker,e)}
     return{name,div,price,months};
@@ -433,7 +453,7 @@ function App(){
           const up={...prev};
           if(info.name&&typeof info.name==="string")up.n=info.name;
           if(info.div!=null&&!isNaN(info.div))up.d=String(info.div);
-          // Months are user-managed — don't auto-fill from scraping
+          if(info.months&&info.months.length)up.m=info.months;
           return up;
         });
       }else{
@@ -524,11 +544,13 @@ function App(){
           if(splitR)allSplits.push({t:s.t,n:s.n,ratio:splitR,oldDiv:od,newDiv:nd});
           up[idx]={...up[idx],d:nd};
           if(res.price)up[idx].p=res.price;
-          // Don't overwrite months — user-managed only
+          // Set months only if not already set (user-managed takes priority)
+          if(res.months&&res.months.length&&!normM(up[idx].m).length)up[idx].m=res.months;
           const ch=nd>od?"↑":nd<od?"↓":"→";
           allLogs.push({t:s.t,n:s.n,od,nd,ch,split:splitR,p:res.price});
         }else{
           if(res.price)up[idx]={...up[idx],p:res.price};
+          if(res.months&&res.months.length&&!normM(up[idx].m).length)up[idx]={...up[idx],m:res.months};
           allLogs.push({t:s.t,n:s.n,od:s.d,nd:s.d,ch:"?",p:res.price});
         }
       });
