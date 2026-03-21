@@ -516,7 +516,10 @@ function App(){
   const confirmDel=async()=>{const up=stocks.filter(s=>s.t!==delT);setStocks(up);await sv(up);setDelT(null)};
 
   // ─── Apply split ───
+  const splitHandled=uR(new Set()); // track already-handled tickers this session
   const applySplit=async(ticker,ratio)=>{
+    if(splitHandled.current.has(ticker))return; // prevent double-apply
+    splitHandled.current.add(ticker);
     const up=stocks.map(s=>{
       if(s.t!==ticker)return s;
       const newAcc={};Object.entries(s.a).forEach(([k,v])=>{newAcc[k]=v*ratio});
@@ -524,6 +527,10 @@ function App(){
     });
     setStocks(up);await sv(up);
     setSplits(prev=>prev.filter(sp=>sp.t!==ticker));
+  };
+  const dismissSplit=(ticker)=>{
+    splitHandled.current.add(ticker);
+    setSplits(prev=>prev.filter(x=>x.t!==ticker));
   };
 
   // ─── Batch Update (enhanced) ───
@@ -801,8 +808,8 @@ function App(){
                   "配当 ¥"+sp.oldDiv+" → ¥"+sp.newDiv+"（1:"+sp.ratio+"分割？）"),
                 h("p",{style:{fontSize:10,color:"#6ee7a8"}},"株数を×"+sp.ratio+"に調整")),
               h("div",{style:{display:"flex",gap:4}},
-                h("button",{style:{...S.pb,fontSize:11,padding:"5px 12px"},onClick:()=>applySplit(sp.t,sp.ratio)},"反映"),
-                h("button",{style:{...S.gb,fontSize:10,padding:"5px 10px"},onClick:()=>setSplits(prev=>prev.filter(x=>x.t!==sp.t))},"無視")))))),
+                h("button",{style:{...S.pb,fontSize:11,padding:"5px 12px",opacity:splitHandled.current.has(sp.t)?.4:1},disabled:splitHandled.current.has(sp.t),onClick:()=>applySplit(sp.t,sp.ratio)},"反映"),
+                h("button",{style:{...S.gb,fontSize:10,padding:"5px 10px"},onClick:()=>dismissSplit(sp.t)},"無視")))))),
         upLog.length>0&&h("div",{style:S.sec},
           h("h3",{style:S.st},"更新結果"),
           h("div",{style:{overflowX:"auto",marginTop:6}},
