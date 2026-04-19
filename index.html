@@ -144,23 +144,32 @@ function detectSplit(oldDiv,newDiv){
 }
 
 // ─── Proxy fetch helper ───
+// 1プロキシで fetch → HTML文字列を返す / 失敗時 reject
+async function tryProxy(px,url,timeoutMs){
+  const resp=await fetch(px(url),{signal:AbortSignal.timeout(timeoutMs)});
+  if(!resp.ok)throw new Error("http "+resp.status);
+  const txt=await resp.text();
+  if(!txt||txt.length<100)throw new Error("empty");
+  // allorigins returns JSON with .contents, htmldriven returns JSON with .body
+  try{
+    const j=JSON.parse(txt);
+    if(j&&typeof j.contents==="string"&&j.contents.length>100)return j.contents;
+    if(j&&typeof j.body==="string"&&j.body.length>100)return j.body;
+  }catch(e){}
+  if(txt.includes("<")&&txt.includes("</"))return txt;
+  throw new Error("invalid html");
+}
+
+// 4プロキシ並列レース → 最速で返ったもの採用。段階的タイムアウト（6s→12s）
 async function proxyFetch(url){
-  for(const px of PROXIES){
-    try{
-      const resp=await fetch(px(url),{signal:AbortSignal.timeout(12000)});
-      if(!resp.ok)continue;
-      const txt=await resp.text();
-      if(!txt||txt.length<100)continue;
-      // allorigins returns JSON with .contents, htmldriven returns JSON with .body
-      try{
-        const j=JSON.parse(txt);
-        if(j&&typeof j.contents==="string"&&j.contents.length>100)return j.contents;
-        if(j&&typeof j.body==="string"&&j.body.length>100)return j.body;
-      }catch(e){}
-      if(txt.includes("<")&&txt.includes("</"))return txt;
-    }catch(e){continue}
-  }
-  return null;
+  // Stage 1: 全プロキシ並列、タイムアウト6秒
+  try{
+    return await Promise.any(PROXIES.map(px=>tryProxy(px,url,6000)));
+  }catch(e){/* 全滅時のみ Stage 2 へ */}
+  // Stage 2: 全プロキシ並列、タイムアウト12秒（遅いプロキシに最後のチャンス）
+  try{
+    return await Promise.any(PROXIES.map(px=>tryProxy(px,url,12000)));
+  }catch(e){return null}
 }
 
 // ─── Styles ───
@@ -368,9 +377,13 @@ function App(){
 
   const fetchStockFull=async(ticker)=>{
     let name=null,div=null,price=null,months=null;
-    // Fetch main page for name + price
+    // メインページと配当ページを並列fetch（直列→並列で2倍速）
+    const [html,html2]=await Promise.all([
+      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T").catch(()=>null),
+      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend").catch(()=>null)
+    ]);
+    // Parse main page for name + price
     try{
-      const html=await proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T");
       if(html){
         const stripped=html.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
 
@@ -402,9 +415,8 @@ function App(){
         if(!price){const ld=html.match(/"price"\s*:\s*"?([\d,.]+)"?/i);if(ld)price=parseFloat(ld[1].replace(/,/g,""))}
       }
     }catch(e){console.log("fetchStockFull main error:",ticker,e)}
-    // Fetch dividend page
+    // Parse dividend page
     try{
-      const html2=await proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend");
       if(html2){
         const stripped2=html2.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
 
@@ -449,22 +461,52 @@ function App(){
   };
 
   // ─── Auto-fill on ticker input ───
+  // localStorageキャッシュ（TTL 24時間）
+  const CACHE_KEY="haitou_stock_cache_v1";
+  const CACHE_TTL=24*60*60*1000;
+  const readCache=(code)=>{
+    try{
+      const all=JSON.parse(localStorage.getItem(CACHE_KEY)||"{}");
+      const e=all[code];
+      if(e&&e.ts&&(Date.now()-e.ts)<CACHE_TTL)return e.data;
+    }catch(e){}
+    return null;
+  };
+  const writeCache=(code,data)=>{
+    try{
+      const all=JSON.parse(localStorage.getItem(CACHE_KEY)||"{}");
+      all[code]={ts:Date.now(),data};
+      localStorage.setItem(CACHE_KEY,JSON.stringify(all));
+    }catch(e){}
+  };
+  const applyInfo=(info)=>{
+    setForm(prev=>{
+      const up={...prev};
+      if(info.name&&typeof info.name==="string")up.n=info.name;
+      if(info.div!=null&&!isNaN(info.div))up.d=String(info.div);
+      if(info.months&&info.months.length)up.m=info.months;
+      return up;
+    });
+  };
+
   const lookupTicker=async(code)=>{
     if(code.length<4)return;
     const mySeq=++lookupSeq.current;
+    // キャッシュヒット時は即反映してネットワーク省略
+    const cached=readCache(code);
+    if(cached){
+      applyInfo(cached);
+      setLookingUp(false);
+      return;
+    }
     setLookingUp(true);setLookupErr("");
     try{
       const info=await fetchStockFull(code);
       if(mySeq!==lookupSeq.current)return;
       const hasData=info&&(info.name||info.div!=null||info.price);
       if(hasData){
-        setForm(prev=>{
-          const up={...prev};
-          if(info.name&&typeof info.name==="string")up.n=info.name;
-          if(info.div!=null&&!isNaN(info.div))up.d=String(info.div);
-          if(info.months&&info.months.length)up.m=info.months;
-          return up;
-        });
+        applyInfo(info);
+        writeCache(code,info);
       }else{
         setLookupErr("データを取得できませんでした");
       }
@@ -476,7 +518,7 @@ function App(){
     setForm(prev=>({...prev,t:val}));setLookupErr("");
     if(lookupTmr.current)clearTimeout(lookupTmr.current);
     if(val.length>=4){
-      lookupTmr.current=setTimeout(()=>lookupTicker(val),700);
+      lookupTmr.current=setTimeout(()=>lookupTicker(val),300);
     }
   };
 
