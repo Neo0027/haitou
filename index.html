@@ -292,6 +292,7 @@ function App(){
   const[lookupErr,setLookupErr]=uS("");
   const[autoUpdating,setAutoUpdating]=uS(false);
   const[autoUpProg,setAutoUpProg]=uS("");
+  const[bgSyncing,setBgSyncing]=uS(false);
   const[searchQ,setSearchQ]=uS("");
   const[toast,setToast]=uS(null); // {msg,type:"ok"|"err"}
   const[confirmDlg,setConfirmDlg]=uS(null); // {title,msg,onOk,danger}
@@ -305,16 +306,35 @@ function App(){
     toastTmr.current=setTimeout(()=>setToast(null),2500);
   };
 
-  // ─── Firebase Load ───
+  // ─── Instant Load from localStorage + background Firebase sync ───
+  // Phase 1: localStorage を同期的に使って即描画（UI がブロックされない）
+  // Phase 2: 描画後に Firebase から最新データをバックグラウンドで取得
   uE(()=>{
-    (async()=>{
+    // ── Phase 1: 同期的に localStorage を反映 ──
+    try{
+      const d=JSON.parse(localStorage.getItem("div-fb"));
+      let stocksArr=d?.stocks;
+      if(stocksArr&&Array.isArray(stocksArr)&&stocksArr.length){
+        stocksArr.forEach(s=>{
+          s.m=normM(s.m);
+          if(s.a&&typeof s.a==="object"){Object.keys(s.a).forEach(k=>{s.a[k]=Number(s.a[k])})}
+          if(s.d!=null)s.d=Number(s.d);
+          if(s.p!=null)s.p=Number(s.p);
+        });
+        setStocks(stocksArr);
+        if(d?.lastUpdated)setLastUp(d.lastUpdated);
+        dataLoaded.current=true; // 既存データで操作可能
+      }
+    }catch(e){}
+
+    // ── Phase 2: UI 描画後に Firebase をバックグラウンドで引く ──
+    const runFbSync=async()=>{
+      setBgSyncing(true);
       try{
         const d=await fbGet("data");
-        // Firebase RTDB may convert arrays to objects — normalize stocks array too
         let stocksArr=d?.stocks;
         if(stocksArr&&!Array.isArray(stocksArr))stocksArr=Object.values(stocksArr);
         if(stocksArr&&stocksArr.length){
-          // Normalize m arrays and a objects
           stocksArr.forEach(s=>{
             s.m=normM(s.m);
             if(s.a&&typeof s.a==="object"){Object.keys(s.a).forEach(k=>{s.a[k]=Number(s.a[k])})}
@@ -325,35 +345,33 @@ function App(){
           if(d?.lastUpdated)setLastUp(d.lastUpdated);
           setSynced(true);
           dataLoaded.current=true;
-        }else{
+        }else if(!dataLoaded.current){
+          // localStorage も Firebase も空 → 初期データで初期化
           await fbSet("data",{stocks:INIT,lastUpdated:null});
           setSynced(true);
           dataLoaded.current=true;
         }
       }catch(e){
-        try{
-          const d=JSON.parse(localStorage.getItem("div-fb"));
-          if(d?.stocks){
-            d.stocks.forEach(s=>{s.m=normM(s.m)});
-            setStocks(d.stocks);
-          }
-          if(d?.lastUpdated)setLastUp(d.lastUpdated);
-          dataLoaded.current=true;
-        }catch(e2){}
+        // Firebase 失敗時も localStorage のデータで稼働継続
+      }finally{
+        setBgSyncing(false);
       }
-    })();
+    };
+    const schedule=window.requestIdleCallback?(cb)=>window.requestIdleCallback(cb,{timeout:500}):(cb)=>setTimeout(cb,0);
+    schedule(runFbSync);
   },[]);
 
   // ─── Auto-update on load (if data is stale or prices missing) ───
+  // requestIdleCallback で UI 描画後に回す（操作をブロックしない）
   uE(()=>{
     if(!dataLoaded.current)return;
     // Check if we need auto-update: prices missing or data older than 6 hours
     const needsUpdate=stocks.some(s=>!s.p||s.p<=0);
     const staleHours=lastUp?((Date.now()-new Date(lastUp).getTime())/3600000):999;
     if(!needsUpdate&&staleHours<6)return;
-    // Run background auto-update
     let cancelled=false;
-    (async()=>{
+    const runAutoUpdate=async()=>{
+      if(cancelled)return;
       setAutoUpdating(true);
       const up=[...stocks];const cc=3;
       for(let i=0;i<up.length;i+=cc){
@@ -379,7 +397,9 @@ function App(){
         try{await fbSet("data",data);setSynced(true)}catch(e){setSynced(false)}
       }
       setAutoUpdating(false);setAutoUpProg("");
-    })();
+    };
+    const schedule=window.requestIdleCallback?(cb)=>window.requestIdleCallback(cb,{timeout:1500}):(cb)=>setTimeout(cb,0);
+    schedule(runAutoUpdate);
     return()=>{cancelled=true};
   },[dataLoaded.current]);
 
@@ -728,7 +748,8 @@ function App(){
         h("span",{style:{fontSize:16,color:"#c9a84c"}},"◆"),
         h("span",{style:{fontSize:14,fontWeight:700,letterSpacing:1.5}},"配当トラッカー"),
         h("span",{style:S.badge},stocks.length+"銘柄"),
-        synced&&!autoUpdating&&h("span",{style:S.syncBadge},"☁ 同期"),
+        bgSyncing&&!autoUpdating&&h("span",{style:{...S.syncBadge,color:"#8a877e",background:"#8a877e20"}},"同期中..."),
+        synced&&!bgSyncing&&!autoUpdating&&h("span",{style:S.syncBadge},"☁ 同期"),
         autoUpdating&&h("span",{style:{...S.syncBadge,color:"#c9a84c",background:"#c9a84c20"}},h("span",{style:{...S.spinner,width:8,height:8,marginLeft:0,marginRight:4}}),"更新中 "+autoUpProg)),
       h("nav",{style:S.nav,className:"nav-btns"},navBtn("dashboard","ダッシュ"),navBtn("stocks","銘柄"),navBtn("update","更新"))),
 
