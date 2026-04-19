@@ -270,7 +270,16 @@ function Modal({open,onClose,title,children}){
 
 function App(){
   const[winW,setWinW]=uS(window.innerWidth);
-  uE(()=>{const h=()=>setWinW(window.innerWidth);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[]);
+  // resize は 150ms デバウンス（連打時の再レンダリングを抑制）
+  uE(()=>{
+    let tmr=null;
+    const handler=()=>{
+      if(tmr)clearTimeout(tmr);
+      tmr=setTimeout(()=>{tmr=null;setWinW(window.innerWidth)},150);
+    };
+    window.addEventListener("resize",handler);
+    return()=>{if(tmr)clearTimeout(tmr);window.removeEventListener("resize",handler)};
+  },[]);
   const isMobile=winW<480;
   const[stocks,setStocks]=uS(INIT);
   const[tab,setTab]=uS("dashboard");
