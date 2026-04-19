@@ -160,15 +160,54 @@ async function tryProxy(px,url,timeoutMs){
   throw new Error("invalid html");
 }
 
-// 4プロキシ並列レース → 最速で返ったもの採用。段階的タイムアウト（6s→12s）
+// ─── Best proxy memory（localStorage 記憶型） ───
+// 成功したプロキシを記憶し、通常時はそれ単独で試す → リクエスト数を 1/4 に削減
+const BEST_PROXY_KEY="haitou_best_proxy";
+const BEST_PROXY_FAIL_MAX=3; // 連続失敗でリセット
+const readBestProxy=()=>{
+  try{
+    const raw=localStorage.getItem(BEST_PROXY_KEY);
+    if(!raw)return null;
+    const o=JSON.parse(raw);
+    if(typeof o.idx!=="number"||o.idx<0||o.idx>=PROXIES.length)return null;
+    return o; // {idx:number, fail:number}
+  }catch(e){return null}
+};
+const writeBestProxy=(idx)=>{
+  try{localStorage.setItem(BEST_PROXY_KEY,JSON.stringify({idx,fail:0}))}catch(e){}
+};
+const bumpBestProxyFail=()=>{
+  try{
+    const cur=readBestProxy();if(!cur)return;
+    const nextFail=(cur.fail||0)+1;
+    if(nextFail>=BEST_PROXY_FAIL_MAX){localStorage.removeItem(BEST_PROXY_KEY)}
+    else{localStorage.setItem(BEST_PROXY_KEY,JSON.stringify({idx:cur.idx,fail:nextFail}))}
+  }catch(e){}
+};
+
+// Stage A: 記憶プロキシ単独 6s → Stage B: 残りプロキシ並列レース 6s → Stage C: 全プロキシ並列 12s
 async function proxyFetch(url){
-  // Stage 1: 全プロキシ並列、タイムアウト6秒
+  const best=readBestProxy();
+  // Stage A: 記憶しているプロキシを単独で試す
+  if(best){
+    try{
+      const html=await tryProxy(PROXIES[best.idx],url,6000);
+      writeBestProxy(best.idx); // 成功したら fail カウンタをリセット
+      return html;
+    }catch(e){bumpBestProxyFail()}
+  }
+  // Stage B: 残りプロキシ（記憶なし時は全プロキシ）を並列レース
+  const remaining=best?PROXIES.map((px,i)=>({px,i})).filter(p=>p.i!==best.idx):PROXIES.map((px,i)=>({px,i}));
   try{
-    return await Promise.any(PROXIES.map(px=>tryProxy(px,url,6000)));
-  }catch(e){/* 全滅時のみ Stage 2 へ */}
-  // Stage 2: 全プロキシ並列、タイムアウト12秒（遅いプロキシに最後のチャンス）
+    const winner=await Promise.any(remaining.map(({px,i})=>tryProxy(px,url,6000).then(html=>({html,i}))));
+    writeBestProxy(winner.i); // 勝ったプロキシを記憶
+    return winner.html;
+  }catch(e){/* 全滅時のみ Stage C へ */}
+  // Stage C: 全プロキシ並列、タイムアウト12秒（遅いプロキシに最後のチャンス）
   try{
-    return await Promise.any(PROXIES.map(px=>tryProxy(px,url,12000)));
+    const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,12000).then(html=>({html,i}))));
+    writeBestProxy(winner.i);
+    return winner.html;
   }catch(e){return null}
 }
 
