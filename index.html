@@ -260,6 +260,25 @@ const S={
   mBtnA:{borderColor:"#c9a84c",color:"#c9a84c",background:"rgba(201,168,76,.12)"},
 };
 
+// ─── Per-account 事前合成スタイル（口座キーごとに 1 回だけ生成） ───
+// 毎レンダリングでスタイル合成していた部分（accBdg, カード borderLeft, ドット等）を
+// モジュール初期化時に 1 回だけ合成して固定オブジェクトにする。
+const SA={};
+const navActive={...S.nb,...S.na};
+AK.forEach(k=>{
+  SA[k]={
+    // 銘柄行の口座バッジ（毎行 × 口座数ぶん呼ばれる最高頻度）
+    badge:{fontSize:9,padding:"1px 4px",borderRadius:3,background:AC[k]+"20",color:AC[k],border:"1px solid "+AC[k]+"33"},
+    // ダッシュボードの口座別サマリーカード
+    summaryCard:{...S.cd,borderLeft:"3px solid "+AC[k]},
+    // ドーナツ凡例・口座バー凡例の色ドット
+    dot:{width:7,height:7,borderRadius:2,background:AC[k]},
+    dotShrink:{width:7,height:7,borderRadius:2,background:AC[k],flexShrink:0},
+    // 銘柄タブの口座フィルタ（選択時）
+    filterActive:{...S.fa,borderColor:AC[k],color:AC[k]}
+  };
+});
+
 function Modal({open,onClose,title,children}){
   if(!open)return null;
   return h("div",{className:"modal-overlay",style:S.ov,onClick:onClose},
@@ -718,8 +737,8 @@ function App(){
   const sorted=uM(()=>[...filt].sort(sortCmp),[filt,sortCmp]);
   const top10=uM(()=>[...stocks].sort((a,b)=>adv(b)-adv(a)).slice(0,10),[stocks]);
   const togSort=uC(k=>{if(sortK===k)setSortA(!sortA);else{setSortK(k);setSortA(false)}},[sortK,sortA]);
-  const navBtn=(k,l)=>h("button",{key:k,style:{...S.nb,...(tab===k?S.na:{})},onClick:()=>setTab(k)},l);
-  const accBdg=(k,v)=>h("span",{key:k,style:{fontSize:9,padding:"1px 4px",borderRadius:3,background:AC[k]+"20",color:AC[k],border:"1px solid "+AC[k]+"33"}},AS[k]+v);
+  const navBtn=(k,l)=>h("button",{key:k,style:tab===k?navActive:S.nb,onClick:()=>setTab(k)},l);
+  const accBdg=(k,v)=>h("span",{key:k,style:SA[k].badge},AS[k]+v);
 
   // Monthly calendar data
   const monthlyData=uM(()=>{
@@ -786,7 +805,7 @@ function App(){
             h("p",{style:S.cl},"予想年間配当"),h("p",{style:S.cv},fmt(totDiv)),h("p",{style:S.cs},"月平均 "+fmt(totDiv/12))),
           h("div",{style:S.cd},
             h("p",{style:S.cl},"保有銘柄 / 総株数"),h("p",{style:S.cv},stocks.length,h("span",{style:{fontSize:12,color:"#8a877e"}},"銘柄")),h("p",{style:S.cs},totSh.toLocaleString()+"株")),
-          ...AK.map(k=>h("div",{key:k,style:{...S.cd,borderLeft:"3px solid "+AC[k]}},
+          ...AK.map(k=>h("div",{key:k,style:SA[k].summaryCard},
             h("p",{style:S.cl},AS[k]+"："+ACCOUNTS[k]),h("p",{style:{...S.cv,fontSize:17}},fmt(accT[k])),h("p",{style:S.cs},stocks.filter(s=>s.a[k]).length+"銘柄")))),
 
         // Monthly Calendar
@@ -828,7 +847,7 @@ function App(){
             h("div",{style:{display:"flex",justifyContent:"center"}},renderDonut()),
             h("div",{style:{marginTop:8}},
               ...AK.map(k=>accT[k]>0?h("div",{key:k,style:{display:"flex",alignItems:"center",gap:4,marginBottom:3}},
-                h("div",{style:{width:7,height:7,borderRadius:2,background:AC[k]}}),
+                h("div",{style:SA[k].dot}),
                 h("span",{style:{fontSize:9,color:"#8a877e"}},AS[k]+" "+(totDiv>0?(accT[k]/totDiv*100).toFixed(0)+"%":""))):null))),
           // TOP10
           h("div",{style:S.sec},
@@ -851,7 +870,7 @@ function App(){
             ...AK.map(k=>{const p=totDiv>0?accT[k]/totDiv*100:0;return p>0.5?h("div",{key:k,style:{width:p+"%",background:AC[k],display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#0a0c12",fontWeight:700}},p>6?AS[k]+" "+fmt(accT[k]):""):null})),
           h("div",{className:"acc-bar-legend",style:{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}},
             ...AK.map(k=>h("div",{key:k,style:{display:"flex",alignItems:"center",gap:3}},
-              h("div",{style:{width:7,height:7,borderRadius:2,background:AC[k],flexShrink:0}}),
+              h("div",{style:SA[k].dotShrink}),
               h("span",{style:{fontSize:10,color:"#8a877e",whiteSpace:"nowrap"}},AS[k]+"："+ACCOUNTS[k]+" ("+fmt(accT[k])+")"))))),
         lastUp&&h("p",{style:{fontSize:10,color:"#3a3830",textAlign:"center",marginTop:14}},"最終更新: "+new Date(lastUp).toLocaleString("ja-JP"))),
 
@@ -861,7 +880,7 @@ function App(){
           h("div",{style:{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}},
             h("span",{style:{fontSize:10,color:"#6e6b63"}},"口座:"),
             h("button",{style:{...S.fb,...(fAcc==="all"?S.fa:{})},onClick:()=>setFAcc("all")},"全て"),
-            ...AK.map(k=>h("button",{key:k,style:{...S.fb,...(fAcc===k?{...S.fa,borderColor:AC[k],color:AC[k]}:{})},onClick:()=>setFAcc(k)},AS[k]))),
+            ...AK.map(k=>h("button",{key:k,style:{...S.fb,...(fAcc===k?SA[k].filterActive:{})},onClick:()=>setFAcc(k)},AS[k]))),
           h("button",{style:S.pb,onClick:openAdd},"＋ 追加")),
         // Search bar
         h("div",{style:{position:"relative",marginBottom:10}},
