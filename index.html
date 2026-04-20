@@ -185,6 +185,24 @@ const bumpBestProxyFail=()=>{
   }catch(e){}
 };
 
+// ユーザー待ち画面用：Stage A をスキップして最初から全プロキシ並列レース
+// 帯域より体感速度優先（ルックアップのような user-initiated 1 回だけの fetch 用）
+async function proxyFetchFast(url,timeoutMs){
+  const t=timeoutMs||5000;
+  try{
+    const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,t).then(html=>({html,i}))));
+    writeBestProxy(winner.i); // 勝ったプロキシは以後の Stage A でも使う
+    return winner.html;
+  }catch(e){
+    // 5秒で全部失敗したら 10秒で再挑戦（遅いプロキシに最後のチャンス）
+    try{
+      const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,t*2).then(html=>({html,i}))));
+      writeBestProxy(winner.i);
+      return winner.html;
+    }catch(e2){return null}
+  }
+}
+
 // Stage A: 記憶プロキシ単独 6s → Stage B: 残りプロキシ並列レース 6s → Stage C: 全プロキシ並列 12s
 async function proxyFetch(url){
   const best=readBestProxy();
@@ -547,6 +565,44 @@ function App(){
     return{name,div,price,months};
   };
 
+  // ─── Lookup 専用の高速取得（配当ページ1枚だけ / 全プロキシ並列から始める） ───
+  // 価格は saveSt 側の背景 fetch で埋めるため、ここでは取らない
+  const fetchStockForLookup=async(ticker)=>{
+    let name=null,div=null,months=null;
+    const html=await proxyFetchFast("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend",5000);
+    if(!html)return{name,div,months};
+    try{
+      const stripped=html.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
+      // ── Name（配当ページの title/h1/og:title からも取れる） ──
+      const tm=html.match(/<title>([^<]+)<\/title>/);
+      if(tm){
+        let nm=tm[1].match(/^(.+?)\s*[【\[（(：:|\-]/);
+        if(nm)name=nm[1].trim();
+        if(!name){nm=tm[1].match(/^(.+?)\s*(?:株式|$)/);if(nm)name=nm[1].trim()}
+      }
+      if(!name){const h1=html.match(/<h1[^>]*>([^<]+)<\/h1>/i);if(h1)name=h1[1].replace(/[\s　]+/g," ").trim().split(/[【\[（(：:|]/)[0].trim()}
+      if(!name){const og=html.match(/property="og:title"\s+content="([^"]+)"/i);if(og)name=og[1].split(/[【\[（(：:|\-]/)[0].trim()}
+      // ── Dividend ──
+      let dm=stripped.match(/1株当たり配当金[（(]会社予想[）)][^\d]{0,20}([\d,]+\.?\d*)\s*円/);
+      if(!dm)dm=stripped.match(/1株当たり配当金[^\d]{0,20}([\d,]+\.?\d*)\s*円/);
+      if(!dm)dm=stripped.match(/予想[^\d]{0,5}年間配当[^\d]{0,10}([\d,]+\.?\d*)\s*円/);
+      if(!dm)dm=stripped.match(/年間配当[^\d]{0,15}([\d,]+\.?\d*)\s*円/);
+      if(!dm){const ld=html.match(/"dividendPerShare"\s*:\s*"?([\d,.]+)"?/i);if(ld)dm=ld}
+      if(dm)div=parseFloat(dm[1].replace(/,/g,""));
+      // ── Payment months (決算月推定) ──
+      const periodMatches=[...stripped.matchAll(/20\d{2}年(\d{1,2})月期/g)];
+      if(periodMatches.length>0){
+        const ms=periodMatches.map(m=>parseInt(m[1]));
+        const freq={};ms.forEach(m=>{freq[m]=(freq[m]||0)+1});
+        const fiscalMonth=parseInt(Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0]);
+        if(fiscalMonth>=1&&fiscalMonth<=12){
+          months=fiscalToPayMonths(fiscalMonth);
+        }
+      }
+    }catch(e){console.log("fetchStockForLookup error:",ticker,e)}
+    return{name,div,months};
+  };
+
   // ─── Auto-fill on ticker input ───
   // localStorageキャッシュ（TTL 24時間）
   const CACHE_KEY="haitou_stock_cache_v1";
@@ -588,9 +644,10 @@ function App(){
     }
     setLookingUp(true);setLookupErr("");
     try{
-      const info=await fetchStockFull(code);
+      // 配当ページ1枚だけ取得（価格は saveSt 側で背景取得）+ 全プロキシ並列レース
+      const info=await fetchStockForLookup(code);
       if(mySeq!==lookupSeq.current)return;
-      const hasData=info&&(info.name||info.div!=null||info.price);
+      const hasData=info&&(info.name||info.div!=null);
       if(hasData){
         applyInfo(info);
         writeCache(code,info);
@@ -605,7 +662,7 @@ function App(){
     setForm(prev=>({...prev,t:val}));setLookupErr("");
     if(lookupTmr.current)clearTimeout(lookupTmr.current);
     if(val.length>=4){
-      lookupTmr.current=setTimeout(()=>lookupTicker(val),300);
+      lookupTmr.current=setTimeout(()=>lookupTicker(val),150);
     }
   };
 
