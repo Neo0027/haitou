@@ -69,6 +69,8 @@ const AS={shi:"シ",ki:"キ",chi:"チ",ra:"ラ"};
 const AK=Object.keys(ACCOUNTS);
 const MN=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
 const PROXIES=[
+  // 自作 Cloudflare Worker（Yahoo Finance 専用・生HTML・CORS付き）
+  u=>"https://haitou-proxy.haitou-proxy.workers.dev/?url="+encodeURIComponent(u),
   u=>"https://api.allorigins.win/get?url="+encodeURIComponent(u),
   u=>"https://corsproxy.io/?url="+encodeURIComponent(u),
   u=>"https://api.codetabs.com/v1/proxy?quest="+encodeURIComponent(u),
@@ -161,9 +163,11 @@ async function tryProxy(px,url,timeoutMs){
 }
 
 // ─── Best proxy memory（localStorage 記憶型） ───
-// 成功したプロキシを記憶し、通常時はそれ単独で試す → リクエスト数を 1/4 に削減
-const BEST_PROXY_KEY="haitou_best_proxy";
+// 成功したプロキシを記憶し、通常時はそれ単独で試す → リクエスト数を削減
+// v2: PROXIES 先頭に Worker を追加したためキー名変更（旧インデックスを自動リセット）
+const BEST_PROXY_KEY="haitou_best_proxy_v2";
 const BEST_PROXY_FAIL_MAX=3; // 連続失敗でリセット
+try{localStorage.removeItem("haitou_best_proxy")}catch(e){} // 旧キー削除
 const readBestProxy=()=>{
   try{
     const raw=localStorage.getItem(BEST_PROXY_KEY);
@@ -189,17 +193,19 @@ const bumpBestProxyFail=()=>{
 // 帯域より体感速度優先（ルックアップのような user-initiated 1 回だけの fetch 用）
 async function proxyFetchFast(url,timeoutMs){
   const t=timeoutMs||5000;
+  const t0=Date.now();
   try{
-    const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,t).then(html=>({html,i}))));
+    const winner=await Promise.any(PROXIES.map((px,i)=>
+      tryProxy(px,url,t)
+        .then(html=>({html,i}))
+        .catch(e=>{console.warn(`[proxy] idx=${i} failed in ${Date.now()-t0}ms:`,e.message);return Promise.reject(e)})
+    ));
     writeBestProxy(winner.i); // 勝ったプロキシは以後の Stage A でも使う
     return winner.html;
   }catch(e){
-    // 5秒で全部失敗したら 10秒で再挑戦（遅いプロキシに最後のチャンス）
-    try{
-      const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,t*2).then(html=>({html,i}))));
-      writeBestProxy(winner.i);
-      return winner.html;
-    }catch(e2){return null}
+    // 全プロキシ並列失敗 → proxyFetch(段階モード) で最後のチャンス
+    console.warn(`[proxy] proxyFetchFast 全滅 (${Date.now()-t0}ms), proxyFetch にフォールバック`);
+    return proxyFetch(url);
   }
 }
 
@@ -595,8 +601,12 @@ function App(){
   // 価格は saveSt 側の背景 fetch で埋めるため、ここでは取らない
   const fetchStockForLookup=async(ticker)=>{
     let name=null,div=null,months=null;
+    const t0=Date.now();
     const html=await proxyFetchFast("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend",5000);
-    if(!html)return{name,div,months};
+    if(!html){
+      console.warn(`[lookup] ${ticker}: プロキシ全滅 (${Date.now()-t0}ms)`);
+      return{name,div,months,reason:"proxy"};
+    }
     try{
       const stripped=html.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
       // ── Name（配当ページの title/h1/og:title からも取れる） ──
@@ -626,6 +636,10 @@ function App(){
         }
       }
     }catch(e){console.log("fetchStockForLookup error:",ticker,e)}
+    if(!name&&div==null){
+      console.warn(`[lookup] ${ticker}: HTML取得済だがパース失敗 (${Date.now()-t0}ms)`);
+      return{name,div,months,reason:"parse"};
+    }
     return{name,div,months};
   };
 
@@ -688,7 +702,10 @@ function App(){
         applyInfo(info);
         writeCache(code,info);
       }else{
-        setLookupErr("データを取得できませんでした");
+        const errMsg=info?.reason==="proxy"?"取得先に接続できませんでした"
+          :info?.reason==="parse"?"ページを取得しましたが配当を読めませんでした"
+          :"データを取得できませんでした";
+        setLookupErr(errMsg);
       }
     }catch(e){if(mySeq===lookupSeq.current)setLookupErr("取得エラー")}
     if(mySeq===lookupSeq.current)setLookingUp(false);
