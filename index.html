@@ -204,12 +204,16 @@ async function proxyFetchFast(url,timeoutMs){
 }
 
 // Stage A: 記憶プロキシ単独 6s → Stage B: 残りプロキシ並列レース 6s → Stage C: 全プロキシ並列 12s
-async function proxyFetch(url){
+// opts.timeout を渡すと Stage A/B のタイムアウトを上書きし、Stage C はその2倍になる
+// （引数なしの既存呼び出しは従来どおり 6s / 6s / 12s）
+async function proxyFetch(url,opts){
+  const t1=(opts&&opts.timeout)||6000;
+  const t2=t1*2;
   const best=readBestProxy();
   // Stage A: 記憶しているプロキシを単独で試す
   if(best){
     try{
-      const html=await tryProxy(PROXIES[best.idx],url,6000);
+      const html=await tryProxy(PROXIES[best.idx],url,t1);
       writeBestProxy(best.idx); // 成功したら fail カウンタをリセット
       return html;
     }catch(e){bumpBestProxyFail()}
@@ -217,13 +221,13 @@ async function proxyFetch(url){
   // Stage B: 残りプロキシ（記憶なし時は全プロキシ）を並列レース
   const remaining=best?PROXIES.map((px,i)=>({px,i})).filter(p=>p.i!==best.idx):PROXIES.map((px,i)=>({px,i}));
   try{
-    const winner=await Promise.any(remaining.map(({px,i})=>tryProxy(px,url,6000).then(html=>({html,i}))));
+    const winner=await Promise.any(remaining.map(({px,i})=>tryProxy(px,url,t1).then(html=>({html,i}))));
     writeBestProxy(winner.i); // 勝ったプロキシを記憶
     return winner.html;
   }catch(e){/* 全滅時のみ Stage C へ */}
-  // Stage C: 全プロキシ並列、タイムアウト12秒（遅いプロキシに最後のチャンス）
+  // Stage C: 全プロキシ並列、タイムアウト長め（遅いプロキシに最後のチャンス）
   try{
-    const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,12000).then(html=>({html,i}))));
+    const winner=await Promise.any(PROXIES.map((px,i)=>tryProxy(px,url,t2).then(html=>({html,i}))));
     writeBestProxy(winner.i);
     return winner.html;
   }catch(e){return null}
@@ -344,13 +348,17 @@ function App(){
   const[confirmDlg,setConfirmDlg]=uS(null); // {title,msg,onOk,danger}
   const lookupTmr=uR(null);
   const lookupSeq=uR(0);
-  const dataLoaded=uR(false);
+  const[dataLoaded,setDataLoaded]=uS(false);
+  const autoUpdateRan=uR(false);
+  const modalOpenRef=uR(false);
   const toastTmr=uR(null);
   const showToast=(msg,type="ok")=>{
     if(toastTmr.current)clearTimeout(toastTmr.current);
     setToast({msg,type});
     toastTmr.current=setTimeout(()=>setToast(null),2500);
   };
+  // showM の変化を ref に即時同期（自動更新ループ内で参照するため）
+  uE(()=>{modalOpenRef.current=showM},[showM]);
 
   // ─── Instant Load from localStorage + background Firebase sync ───
   // Phase 1: localStorage を同期的に使って即描画（UI がブロックされない）
@@ -369,7 +377,7 @@ function App(){
         });
         setStocks(stocksArr);
         if(d?.lastUpdated)setLastUp(d.lastUpdated);
-        dataLoaded.current=true; // 既存データで操作可能
+        setDataLoaded(true); // 既存データで操作可能
       }
     }catch(e){}
 
@@ -390,12 +398,12 @@ function App(){
           setStocks(stocksArr);
           if(d?.lastUpdated)setLastUp(d.lastUpdated);
           setSynced(true);
-          dataLoaded.current=true;
+          setDataLoaded(true);
         }else if(!dataLoaded.current){
           // localStorage も Firebase も空 → 初期データで初期化
           await fbSet("data",{stocks:INIT,lastUpdated:null});
           setSynced(true);
-          dataLoaded.current=true;
+          setDataLoaded(true);
         }
       }catch(e){
         // Firebase 失敗時も localStorage のデータで稼働継続
@@ -408,20 +416,39 @@ function App(){
   },[]);
 
   // ─── Auto-update on load (if data is stale or prices missing) ───
-  // requestIdleCallback で UI 描画後に回す（操作をブロックしない）
+  // 3秒遅延で初回描画をブロックしない。モーダル中は最大2分待機。
   uE(()=>{
-    if(!dataLoaded.current)return;
-    // Check if we need auto-update: prices missing or data older than 6 hours
+    if(!dataLoaded)return;
+    if(autoUpdateRan.current)return; // 二重起動防止
     const needsUpdate=stocks.some(s=>!s.p||s.p<=0);
     const staleHours=lastUp?((Date.now()-new Date(lastUp).getTime())/3600000):999;
-    if(!needsUpdate&&staleHours<6)return;
+    if(!needsUpdate&&staleHours<24)return;
     let cancelled=false;
+    let modalPollId=null;
+    const clearModalPoll=()=>{if(modalPollId!=null){clearTimeout(modalPollId);modalPollId=null}};
     const runAutoUpdate=async()=>{
       if(cancelled)return;
+      autoUpdateRan.current=true;
       setAutoUpdating(true);
       const up=[...stocks];const cc=3;
+      let timedOut=false; // ループ外で宣言し、保存ガードでも参照できるようにする
       for(let i=0;i<up.length;i+=cc){
         if(cancelled)break;
+        // モーダルが開いている間は待機（最大2分、タイムアウト or cancelled で諦める）
+        if(modalOpenRef.current){
+          const deadline=Date.now()+120000;
+          await new Promise(res=>{
+            const poll=()=>{
+              if(cancelled){clearModalPoll();res();return}
+              if(!modalOpenRef.current){res();return}
+              if(Date.now()>=deadline){timedOut=true;res();return}
+              modalPollId=setTimeout(poll,500);
+            };
+            poll();
+          });
+          modalPollId=null;
+          if(cancelled||timedOut)break;
+        }
         const batch=up.slice(i,i+cc);
         setAutoUpProg(Math.round((i/up.length)*100)+"%");
         const results=await Promise.all(batch.map(s=>fetchStockFull(s.t).catch(()=>({name:null,div:null,price:null,months:null}))));
@@ -429,25 +456,24 @@ function App(){
           const s=batch[j];const idx=up.findIndex(x=>x.t===s.t);if(idx<0)return;
           if(res.div!=null&&!isNaN(res.div)&&res.div>=0)up[idx]={...up[idx],d:res.div};
           if(res.price)up[idx]={...up[idx],p:res.price};
-          // Set months only if not already set (user-managed takes priority)
           if(res.months&&res.months.length&&!normM(up[idx].m).length)up[idx]={...up[idx],m:res.months};
         });
         if(i+cc<up.length)await new Promise(r=>setTimeout(r,800));
       }
-      if(!cancelled){
+      if(!cancelled&&!timedOut){
         const now=new Date().toISOString();
         setStocks(up);setLastUp(now);
         const normalized=up.map(st=>{const nm=normM(st.m);return{...st,m:nm.length>0?nm:undefined}});
         const data={stocks:normalized,lastUpdated:now};
         localStorage.setItem("div-fb",JSON.stringify(data));
         try{await fbSet("data",data);setSynced(true)}catch(e){setSynced(false)}
+        clearLookupCache();
       }
       setAutoUpdating(false);setAutoUpProg("");
     };
-    const schedule=window.requestIdleCallback?(cb)=>window.requestIdleCallback(cb,{timeout:1500}):(cb)=>setTimeout(cb,0);
-    schedule(runAutoUpdate);
-    return()=>{cancelled=true};
-  },[dataLoaded.current]);
+    const startTmr=setTimeout(runAutoUpdate,3000);
+    return()=>{cancelled=true;clearModalPoll();clearTimeout(startTmr)};
+  },[dataLoaded]);
 
   // ─── Save ───
   const sv=uC(async(s,lu)=>{
@@ -480,12 +506,12 @@ function App(){
     }catch(e){return null}
   };
 
-  const fetchStockFull=async(ticker)=>{
+  const fetchStockFull=async(ticker,opts)=>{
     let name=null,div=null,price=null,months=null;
     // メインページと配当ページを並列fetch（直列→並列で2倍速）
     const [html,html2]=await Promise.all([
-      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T").catch(()=>null),
-      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend").catch(()=>null)
+      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T",opts).catch(()=>null),
+      proxyFetch("https://finance.yahoo.co.jp/quote/"+ticker+".T/dividend",opts).catch(()=>null)
     ]);
     // Parse main page for name + price
     try{
@@ -622,6 +648,8 @@ function App(){
       localStorage.setItem(CACHE_KEY,JSON.stringify(all));
     }catch(e){}
   };
+  // 一括更新 or 自動更新完了時にキャッシュ全破棄（増配後の古い値混入を防ぐ）
+  const clearLookupCache=()=>{try{localStorage.removeItem(CACHE_KEY)}catch(e){}};
   const applyInfo=(info)=>{
     setForm(prev=>{
       const up={...prev};
@@ -635,6 +663,14 @@ function App(){
   const lookupTicker=async(code)=>{
     if(code.length<4)return;
     const mySeq=++lookupSeq.current;
+    // 既に登録済みの銘柄なら、通信前にローカルの値を即座にフォームへ反映（待ち時間ゼロ）
+    // 編集モードではスキップ（手で直した値を stocks 内の古い値で上書きしないため）
+    if(editI<0){
+      const local=stocks.find(s=>s.t===code.toUpperCase());
+      if(local){
+        applyInfo({name:local.n,div:local.d,months:normM(local.m)});
+      }
+    }
     // キャッシュヒット時は即反映してネットワーク省略
     const cached=readCache(code);
     if(cached){
@@ -759,7 +795,7 @@ function App(){
       setUpLog([...allLogs]);setSplits([...allSplits]);
       if(i+cc<up.length)await new Promise(r=>setTimeout(r,1000));
     }
-    const now=new Date().toISOString();setStocks(up);setLastUp(now);await sv(up,now);setUpdating(false);setUpProg("完了！");
+    const now=new Date().toISOString();setStocks(up);setLastUp(now);await sv(up,now);setUpdating(false);setUpProg("完了！");clearLookupCache();
   };
 
   // Toggle month in form
